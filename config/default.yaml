@@ -13,6 +13,14 @@ universe:
   filters:
     min_price: 5
     min_avg_dollar_volume_20d: 50000000
+  # Static snapshots, not historical membership. See docs/data-source-decision.md.
+  point_in_time_membership: false
+  files:
+    sp500: fixtures/universe/sp500.csv
+    nasdaq100: fixtures/universe/nasdaq100.csv
+  as_of:
+    sp500: "2026-09-21"
+    nasdaq100: "2026-08-09"
 
 ranking:
   top_n: 3
@@ -91,7 +99,7 @@ providers:
   market: fixture
   premarket: fixture
   news: fixture
-  universe: fixture
+  universe: file
   calendar: nyse
 
 database:

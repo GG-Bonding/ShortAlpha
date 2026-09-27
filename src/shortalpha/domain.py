@@ -117,6 +117,7 @@ class UniverseList:
     list_as_of: date
     point_in_time_membership: bool
     members: tuple[UniverseMember, ...]
+    source_as_of: tuple[tuple[str, date], ...] = ()
 
 
 @dataclass(frozen=True)

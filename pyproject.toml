@@ -3,7 +3,7 @@ name = "shortalpha"
 version = "0.1.0"
 description = "Point-in-time pre-open multi-factor signal research for US equities."
 requires-python = ">=3.11"
-dependencies = ["PyYAML>=6.0"]
+dependencies = ["PyYAML>=6.0", "httpx>=0.27"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.6"]

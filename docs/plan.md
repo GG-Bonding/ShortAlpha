@@ -10,7 +10,7 @@ ShortAlpha 是开盘前信号研究系统，不是交易系统。它要回答三
 - 标准库：`sqlite3`、`zoneinfo`、`argparse`、`dataclasses`
 - PyYAML 读取配置
 - pytest、ruff
-- HTTP 客户端留到 Phase 2 再加入，Phase 1 没有网络依赖
+- httpx 只用于 Alpaca 行情客户端。测试用 MockTransport，不访问网络
 
 选择 Python 而不是规格草案里的 Go 目录，是因为因子、夹具和测试都更直接。领域代码与 Provider 仍分开。
 
@@ -41,7 +41,7 @@ tests/
 | 阶段 | 内容 | 状态 |
 | --- | --- | --- |
 | 1 | 配置、领域模型、SQLite、交易日历、Fixture Provider | 完成 |
-| 2 | 历史日线、股票池、流动性过滤 | 未开始 |
+| 2 | 历史日线、股票池、流动性过滤 | 完成 |
 | 3 | 动量、相对强弱、价格行为 | 未开始 |
 | 4 | 成交量与盘前 | 未开始 |
 | 5 | 新闻、事件分类、新鲜度、事件分 | 未开始 |

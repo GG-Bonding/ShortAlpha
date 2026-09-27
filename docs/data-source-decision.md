@@ -56,4 +56,19 @@ APCA_API_SECRET_KEY
 5. **指数成分。** 没有免费的 point-in-time 成分。宇宙文件带 `list_as_of`，并且 `point_in_time_membership: false`。用当前成分回放过去有幸存者偏差，每次运行都要把这个标记写进记录。
 6. **新闻修订。** `available_at = created_at`。不用 `updated_at <= signal_time` 做过滤，否则一篇当时已经发布、后来被编辑的文章会从历史信号里消失。正文一旦写入本地就冻结；回放读本地行，不重新下载覆盖。源站在我们入库前改过正文，是已知残余偏差。
 
-Phase 1 只实现 Fixture。Alpaca 行情客户端在 Phase 2 接入，新闻客户端在 Phase 5 接入。
+## 股票池快照
+
+V0.1 没有免费的 point-in-time 成分，所以仓库里放的是两份静态名单，配置里写明日期：
+
+| 来源 | 文件 | 快照日期 | 取得方式 |
+| --- | --- | --- | --- |
+| S&P 500 | `fixtures/universe/sp500.csv` | 2026-09-21 | `datasets/s-and-p-500-companies` 当日自动更新，503 只 |
+| Nasdaq-100 | `fixtures/universe/nasdaq100.csv` | 2026-08-09 | `unliftedq/index-constitution` 的 `latest/nasdaq100.csv`，102 只 |
+
+两份合并去重后是 518 只。`point_in_time_membership` 必须保持 false。用这份名单回放 2025 会有幸存者偏差，评估时不能把它说成无偏。
+
+## 已接入的行情客户端
+
+Phase 2 接入 Alpaca 日线。`adjustment` 只允许 `raw`，因此价格过滤用的是当时的成交价，而不是今天的前复权价。bar 时间戳是区间起点；`available_at` 改写成 NYSE 收盘（提前收市为 13:00 ET）。信号日 09:00 读到的“当天日线”会被丢掉。
+
+新闻客户端仍在 Phase 5。拆分调整只影响跨 ex-date 的收益，留到计算动量时处理；流动性过滤不需要它，因为原始收盘价就是当时的价格。

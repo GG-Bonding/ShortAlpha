@@ -51,9 +51,24 @@ class UniverseFilters:
 
 
 @dataclass(frozen=True)
+class UniverseFiles:
+    sp500: str
+    nasdaq100: str
+
+
+@dataclass(frozen=True)
+class UniverseAsOf:
+    sp500: date
+    nasdaq100: date
+
+
+@dataclass(frozen=True)
 class UniverseConfig:
     sources: tuple[str, ...]
     filters: UniverseFilters
+    files: UniverseFiles
+    as_of: UniverseAsOf
+    point_in_time_membership: bool
 
 
 @dataclass(frozen=True)
@@ -249,9 +264,14 @@ def _build(data: dict[str, Any], root: Path) -> AppConfig:
     except ZoneInfoNotFoundError as exc:
         raise ConfigError(f"unknown timezone: {timezone_name}") from exc
 
-    universe = _section(data, "universe", {"sources", "filters"})
-    filters = _section(universe, "filters", {"min_price", "min_avg_dollar_volume_20d"})
-    sources = _sources(universe)
+    universe = _universe_config(
+        _section(
+            data,
+            "universe",
+            {"sources", "filters", "files", "as_of", "point_in_time_membership"},
+        ),
+        root,
+    )
 
     ranking = _section(data, "ranking", {"top_n", "long_threshold", "watch_threshold"})
     long_threshold = _as_number(ranking, "long_threshold")
@@ -361,16 +381,9 @@ def _build(data: dict[str, Any], root: Path) -> AppConfig:
         _section(data, "fixtures", {"market", "premarket", "news", "universe"}),
         root,
     )
-    min_price = _as_number(filters, "min_price")
-    min_dollar = _as_number(filters, "min_avg_dollar_volume_20d")
-    if min_price < 0 or min_dollar < 0:
-        raise ConfigError("universe filters must be >= 0")
     return AppConfig(
         signal=SignalConfig(timezone=timezone_name, time=_as_clock(signal, "time")),
-        universe=UniverseConfig(
-            sources=sources,
-            filters=UniverseFilters(min_price=min_price, min_avg_dollar_volume_20d=min_dollar),
-        ),
+        universe=universe,
         ranking=RankingConfig(
             top_n=_positive_int(ranking, "top_n"),
             long_threshold=long_threshold,
@@ -593,6 +606,34 @@ def _fixtures(data: dict[str, Any], root: Path) -> FixtureConfig:
     return cfg
 
 
+def _universe_config(data: dict[str, Any], root: Path) -> UniverseConfig:
+    filters = _section(data, "filters", {"min_price", "min_avg_dollar_volume_20d"})
+    min_price = _as_number(filters, "min_price")
+    min_dollar = _as_number(filters, "min_avg_dollar_volume_20d")
+    if min_price < 0 or min_dollar < 0:
+        raise ConfigError("universe filters must be >= 0")
+    if data.get("point_in_time_membership") is not False:
+        raise ConfigError("point_in_time_membership must be false for the V0.1 static universe")
+    files = _section(data, "files", {"sp500", "nasdaq100"})
+    as_of = _section(data, "as_of", {"sp500", "nasdaq100"})
+    file_cfg = UniverseFiles(
+        sp500=_as_str(files, "sp500"),
+        nasdaq100=_as_str(files, "nasdaq100"),
+    )
+    for relative in (file_cfg.sp500, file_cfg.nasdaq100):
+        _require_file(root / relative)
+    return UniverseConfig(
+        sources=_sources(data),
+        filters=UniverseFilters(min_price=min_price, min_avg_dollar_volume_20d=min_dollar),
+        files=file_cfg,
+        as_of=UniverseAsOf(
+            sp500=_as_date(as_of, "sp500"),
+            nasdaq100=_as_date(as_of, "nasdaq100"),
+        ),
+        point_in_time_membership=False,
+    )
+
+
 def _sources(data: dict[str, Any]) -> tuple[str, ...]:
     raw = data.get("sources")
     if not isinstance(raw, list) or not raw:
@@ -680,6 +721,14 @@ def _positive_int(data: dict[str, Any], key: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ConfigError(f"{key} must be a positive integer")
     return value
+
+
+def _as_date(data: dict[str, Any], key: str) -> date:
+    raw = _as_str(data, key)
+    try:
+        return date.fromisoformat(raw)
+    except ValueError as exc:
+        raise ConfigError(f"invalid date for {key}: {raw}") from exc
 
 
 def _as_clock(data: dict[str, Any], key: str) -> time:
