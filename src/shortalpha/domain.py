@@ -168,8 +168,12 @@ class PremarketWindow:
             validate_timeline(self.event_time, self.published_at, self.available_at)
             if self.volume is None or self.volume < 0:
                 raise ValueError(f"{self.symbol} premarket volume is required")
-            if self.last_price is None or self.last_price <= 0:
+            if self.volume > 0 and (self.last_price is None or self.last_price <= 0):
                 raise ValueError(f"{self.symbol} premarket last price is required")
+            if self.last_price is not None and self.last_price <= 0:
+                raise ValueError(f"{self.symbol} premarket last price is required")
+            if self.volume == 0 and self.last_price is None and not self.reason:
+                raise ValueError(f"{self.symbol} empty premarket window needs a reason")
         elif not self.reason:
             raise ValueError(f"{self.symbol} unavailable premarket needs a reason")
 
