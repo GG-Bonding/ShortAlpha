@@ -4,7 +4,7 @@
 
 这不是交易系统。它不会连接券商，也不会下单。
 
-当前进度：**Phase 6**。五项因子可以合成总分并排出候选。快照、回放和评估还在后面。规则见 [docs/plan.md](docs/plan.md)、[docs/point-in-time-rules.md](docs/point-in-time-rules.md) 和 [docs/data-source-decision.md](docs/data-source-decision.md)。
+当前进度：**Phase 7**。信号快照会写入 SQLite，再次运行生成新的 `run_id`，不会覆盖旧结果。回放和评估还在后面。规则见 [docs/plan.md](docs/plan.md)、[docs/point-in-time-rules.md](docs/point-in-time-rules.md) 和 [docs/data-source-decision.md](docs/data-source-decision.md)。
 
 ## 运行
 
@@ -45,3 +45,11 @@ pytest
 事件分不调用模型。标题和摘要按 `config/event_rules.yaml` 归类，新鲜度是 `exp(-0.05 * 小时)`，超过 72 小时的稿件丢掉。同一族里正负说法同时出现则该族不计分。多条事件的贡献相加后夹到 -1 到 1，再映射到 0–25。没有合格事件时是 12.5 分，原因是 `no qualifying events`，这不是故障。09:15 发布的新闻不会进入 09:00 的信号。新鲜的重大利空会标成 `SEVERE_NEGATIVE`。
 
 总分是五项分数之和。`>= 80` 是 `LONG_CANDIDATE`，`70–80` 是 `WATCH`，更低是 `PASS`。只在达到 80 的股票里取前 3。没有达到 80 的股票时，结果是 `NO_TRADE`，不会把观察名单顶上去。`SEVERE_NEGATIVE` 不参与排序。`EXTREME_RISK_OFF` 仍会留下分数，同时把这次运行标成 `NO_TRADE`。VIX 缺失时不把它当成 0。
+
+每次保存都会新建一份快照。正文哈希不包含 `run_id` 和 `created_at`，所以同一输入的两次运行哈希相同，但旧行还在。快照文件用独占创建，已存在的文件不会被改写。分数只在写入快照时四舍五入到 4 位小数。
+
+```bash
+shortalpha explain NVDA --date 2024-06-20
+```
+
+解释会列出五项分数、加分原因和风险。同一天有多次运行时，默认解释最新的一次。
