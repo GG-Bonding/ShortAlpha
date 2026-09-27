@@ -6,8 +6,10 @@ from shortalpha.calendar import NYSECalendar
 from shortalpha.config import AppConfig
 from shortalpha.errors import ConfigError
 from shortalpha.providers.alpaca_market import AlpacaMarketDataProvider
+from shortalpha.providers.alpaca_news import AlpacaNewsProvider
 from shortalpha.providers.alpaca_premarket import AlpacaPremarketProvider
 from shortalpha.providers.fixture_market import FixtureMarketDataProvider
+from shortalpha.providers.fixture_news import FixtureNewsProvider
 from shortalpha.providers.fixture_premarket import FixturePreMarketProvider
 from shortalpha.providers.fixture_universe import FixtureUniverseProvider
 from shortalpha.universe import FileUniverseProvider, load_membership
@@ -37,6 +39,14 @@ def build_premarket_provider(cfg: AppConfig, root: Path):
             timezone=cfg.signal.timezone,
         )
     raise ConfigError(f"unsupported premarket provider: {cfg.providers.premarket}")
+
+
+def build_news_provider(cfg: AppConfig, root: Path):
+    if cfg.providers.news == "fixture":
+        return FixtureNewsProvider.from_json(_resolve(root, cfg.fixtures.news))
+    if cfg.providers.news == "alpaca":
+        return AlpacaNewsProvider.from_env(base_url=cfg.alpaca.data_base_url)
+    raise ConfigError(f"unsupported news provider: {cfg.providers.news}")
 
 
 def build_universe_provider(cfg: AppConfig, root: Path):

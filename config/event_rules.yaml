@@ -1,0 +1,225 @@
+# Prior keyword rules. Do not retune these after seeing forward returns.
+types:
+  - id: earnings_beat
+    family: earnings
+    direction: 1
+    importance: 0.9
+    confidence: 0.7
+    label: Earnings beat
+    patterns:
+      - "earnings beat"
+      - "beats earnings"
+      - "beat earnings estimates"
+
+  - id: earnings_miss
+    family: earnings
+    direction: -1
+    importance: 0.9
+    confidence: 0.7
+    label: Earnings miss
+    patterns:
+      - "earnings miss"
+      - "misses earnings"
+      - "missed earnings estimates"
+
+  - id: revenue_beat
+    family: revenue
+    direction: 1
+    importance: 0.7
+    confidence: 0.7
+    label: Revenue beat
+    patterns:
+      - "revenue beat"
+      - "beats revenue"
+
+  - id: revenue_miss
+    family: revenue
+    direction: -1
+    importance: 0.7
+    confidence: 0.7
+    label: Revenue miss
+    patterns:
+      - "revenue miss"
+      - "misses revenue"
+
+  - id: guidance_raise
+    family: guidance
+    direction: 1
+    importance: 0.85
+    confidence: 0.7
+    label: Guidance raised
+    patterns:
+      - "guidance raised"
+      - "raises guidance"
+      - "raised guidance"
+
+  - id: guidance_cut
+    family: guidance
+    direction: -1
+    importance: 0.85
+    confidence: 0.7
+    label: Guidance cut
+    patterns:
+      - "guidance cut"
+      - "cuts guidance"
+      - "lowered guidance"
+
+  - id: analyst_upgrade
+    family: analyst
+    direction: 1
+    importance: 0.55
+    confidence: 0.6
+    label: Analyst upgrade
+    patterns:
+      - "analyst upgrade"
+      - "upgraded to"
+      - "rating upgrade"
+
+  - id: analyst_downgrade
+    family: analyst
+    direction: -1
+    importance: 0.55
+    confidence: 0.6
+    label: Analyst downgrade
+    patterns:
+      - "analyst downgrade"
+      - "downgraded to"
+      - "rating downgrade"
+
+  - id: price_target_raise
+    family: price_target
+    direction: 1
+    importance: 0.4
+    confidence: 0.6
+    label: Price target raise
+    patterns:
+      - "price target raised"
+      - "raises price target"
+      - "raised its price target"
+
+  - id: price_target_cut
+    family: price_target
+    direction: -1
+    importance: 0.4
+    confidence: 0.6
+    label: Price target cut
+    patterns:
+      - "price target cut"
+      - "cuts price target"
+      - "lowered its price target"
+
+  - id: ma_announced
+    family: ma
+    direction: 1
+    importance: 0.95
+    confidence: 0.65
+    label: M&A
+    patterns:
+      - "to acquire"
+      - "agrees to be acquired"
+      - "merger agreement"
+
+  - id: ma_terminated
+    family: ma
+    direction: -1
+    importance: 0.9
+    confidence: 0.65
+    label: M&A terminated
+    patterns:
+      - "deal terminated"
+      - "acquisition terminated"
+      - "merger called off"
+
+  - id: major_contract
+    family: contract
+    direction: 1
+    importance: 0.7
+    confidence: 0.6
+    label: Major contract
+    patterns:
+      - "major contract"
+      - "wins contract"
+      - "awarded a contract"
+
+  - id: regulatory_approval
+    family: regulatory
+    direction: 1
+    importance: 0.85
+    confidence: 0.65
+    label: Regulatory approval
+    patterns:
+      - "fda approval"
+      - "regulatory approval"
+      - "receives approval"
+
+  - id: regulatory_investigation
+    family: regulatory
+    direction: -1
+    importance: 0.9
+    confidence: 0.65
+    label: Regulatory investigation
+    patterns:
+      - "regulatory investigation"
+      - "under investigation"
+      - "sec investigation"
+
+  - id: product_launch
+    family: product
+    direction: 1
+    importance: 0.5
+    confidence: 0.55
+    label: Major product launch
+    patterns:
+      - "product launch"
+      - "launches new product"
+
+  - id: product_failure
+    family: product
+    direction: -1
+    importance: 0.85
+    confidence: 0.7
+    label: Product failure
+    patterns:
+      - "product recall"
+      - "product failure"
+
+  - id: management_appointment
+    family: management
+    direction: 1
+    importance: 0.4
+    confidence: 0.55
+    label: Management appointment
+    patterns:
+      - "appointed ceo"
+      - "names new ceo"
+
+  - id: management_departure
+    family: management
+    direction: -1
+    importance: 0.6
+    confidence: 0.6
+    label: Management change
+    patterns:
+      - "ceo resigns"
+      - "steps down as ceo"
+
+  - id: legal_action
+    family: legal
+    direction: -1
+    importance: 0.8
+    confidence: 0.6
+    label: Material legal event
+    patterns:
+      - "files lawsuit"
+      - "hit with lawsuit"
+      - "sec charges"
+
+  - id: legal_resolved
+    family: legal
+    direction: 1
+    importance: 0.5
+    confidence: 0.55
+    label: Legal event resolved
+    patterns:
+      - "lawsuit dismissed"
+      - "settles lawsuit"

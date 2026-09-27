@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import yaml
 
 from shortalpha.errors import ConfigError
+from shortalpha.event_rules import load_event_rules
 
 _TOP_LEVEL = {
     "signal",
@@ -115,6 +116,8 @@ class EventConfig:
     severe_freshness: float
     raw_low: float
     raw_high: float
+    rules: str
+    rules_sha256: str
 
 
 @dataclass(frozen=True)
@@ -312,8 +315,10 @@ def _build(data: dict[str, Any], root: Path) -> AppConfig:
                 "severe_freshness",
                 "raw_low",
                 "raw_high",
+                "rules",
             },
-        )
+        ),
+        root,
     )
     relative = _relative_strength(
         _section(
@@ -443,7 +448,13 @@ def _volume(data: dict[str, Any]) -> VolumeConfig:
     return cfg
 
 
-def _event(data: dict[str, Any]) -> EventConfig:
+def _event(data: dict[str, Any], root: Path) -> EventConfig:
+    rules = _as_str(data, "rules")
+    rules_path = Path(rules)
+    if not rules_path.is_absolute():
+        rules_path = root / rules_path
+    _require_file(rules_path)
+    load_event_rules(rules_path)
     cfg = EventConfig(
         freshness_lambda=_as_number(data, "freshness_lambda"),
         duplicate_window_hours=_as_number(data, "duplicate_window_hours"),
@@ -453,6 +464,8 @@ def _event(data: dict[str, Any]) -> EventConfig:
         severe_freshness=_as_number(data, "severe_freshness"),
         raw_low=_as_number(data, "raw_low"),
         raw_high=_as_number(data, "raw_high"),
+        rules=rules,
+        rules_sha256=hashlib.sha256(rules_path.read_bytes()).hexdigest(),
     )
     if cfg.freshness_lambda <= 0 or cfg.duplicate_window_hours <= 0 or cfg.max_age_hours <= 0:
         raise ConfigError("event windows and lambda must be positive")

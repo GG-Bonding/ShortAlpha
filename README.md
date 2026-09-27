@@ -4,7 +4,7 @@
 
 这不是交易系统。它不会连接券商，也不会下单。
 
-当前进度：**Phase 4**。动量、相对强弱、价格行为和成交量已实现。事件、总分、快照、回放和评估还在后面。规则见 [docs/plan.md](docs/plan.md)、[docs/point-in-time-rules.md](docs/point-in-time-rules.md) 和 [docs/data-source-decision.md](docs/data-source-decision.md)。
+当前进度：**Phase 5**。五项因子里的事件分已经按关键词规则实现。总分、快照、回放和评估还在后面。规则见 [docs/plan.md](docs/plan.md)、[docs/point-in-time-rules.md](docs/point-in-time-rules.md) 和 [docs/data-source-decision.md](docs/data-source-decision.md)。
 
 ## 运行
 
@@ -41,3 +41,5 @@ pytest
 动量只用已经收盘的交易日，不用盘前价。`R5 > 25%` 时动量分减半。相对强弱比较同一窗口里的个股、SPY 和行业 ETF。行业映射在 `config/sector_map.yaml`，来自 S&P 500 的 GICS 行业；只在 Nasdaq-100、不在这份 S&P 500 快照里的股票没有映射，相对强弱会报缺失，不会改用 SPY 充数。价格行为在缺口超过 3% 之后开始惩罚，更大的缺口不会得到更高的分。没有盘前价格时，这一项记为权重的一半，并写明是中性降级，不编造缺口。
 
 成交量优先用当天 04:00 到 09:00 的盘前量，除以过去 20 个交易日同一窗口的平均量。默认的 Alpaca IEX 行情不是合并盘前成交，这时 `premarket_volume_available` 为 false，改用最近一个完整交易日的成交量除以再往前 20 日的平均成交量。分母是 0 或历史不够时直接报错，不会记成 0 分。
+
+事件分不调用模型。标题和摘要按 `config/event_rules.yaml` 归类，新鲜度是 `exp(-0.05 * 小时)`，超过 72 小时的稿件丢掉。同一族里正负说法同时出现则该族不计分。多条事件的贡献相加后夹到 -1 到 1，再映射到 0–25。没有合格事件时是 12.5 分，原因是 `no qualifying events`，这不是故障。09:15 发布的新闻不会进入 09:00 的信号。新鲜的重大利空会标成 `SEVERE_NEGATIVE`。

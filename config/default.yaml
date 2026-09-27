@@ -57,6 +57,7 @@ event:
   severe_freshness: 0.5
   raw_low: -1.0
   raw_high: 1.0
+  rules: config/event_rules.yaml
 
 relative_strength:
   market_weight: 0.4
