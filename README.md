@@ -4,7 +4,7 @@
 
 这不是交易系统。它不会连接券商，也不会下单。
 
-当前进度：**Phase 7**。信号快照会写入 SQLite，再次运行生成新的 `run_id`，不会覆盖旧结果。回放和评估还在后面。规则见 [docs/plan.md](docs/plan.md)、[docs/point-in-time-rules.md](docs/point-in-time-rules.md) 和 [docs/data-source-decision.md](docs/data-source-decision.md)。
+当前进度：**Phase 8**。信号日之后的 1、2、3、5 个交易日收益已经能按交易日历计算。回放和评估还在后面。规则见 [docs/plan.md](docs/plan.md)、[docs/point-in-time-rules.md](docs/point-in-time-rules.md) 和 [docs/data-source-decision.md](docs/data-source-decision.md)。
 
 ## 运行
 
@@ -53,3 +53,5 @@ shortalpha explain NVDA --date 2024-06-20
 ```
 
 解释会列出五项分数、加分原因和风险。同一天有多次运行时，默认解释最新的一次。
+
+向前收益的入场价是信号日开盘，出场价是之后第 n 个交易日的开盘。周末和 NYSE 假日不算交易日。超额收益是个股收益减去同一窗口的 SPY。最大不利波动只用入场日到出场前一日的最低价，不用出场当天的盘中低点。信号日 09:00 还看不到当天日线，所以那时不会算出向前收益。缺 SPY 时不把超额记成 0。

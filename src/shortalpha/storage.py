@@ -156,6 +156,50 @@ class Store:
             self.conn.rollback()
             raise
 
+    def insert_forward_return(
+        self,
+        *,
+        run_id: str,
+        symbol: str,
+        horizon: int,
+        entry_session: date,
+        entry_price: float,
+        exit_session: date,
+        exit_price: float,
+        stock_return: float,
+        spy_return: float,
+        excess_return: float,
+        mae: float,
+        mfe: float,
+        code_version: str,
+    ) -> None:
+        if horizon not in {1, 2, 3, 5}:
+            raise ValueError("horizon must be 1, 2, 3, or 5")
+        self._execute(
+            """
+            INSERT INTO forward_returns (
+                run_id, symbol, horizon, entry_session_date, entry_price,
+                exit_session_date, exit_price, stock_return, spy_return,
+                excess_return, mae, mfe, code_version
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                symbol,
+                horizon,
+                entry_session.isoformat(),
+                entry_price,
+                exit_session.isoformat(),
+                exit_price,
+                stock_return,
+                spy_return,
+                excess_return,
+                mae,
+                mfe,
+                code_version,
+            ),
+        )
+
     def runs_on(self, signal_date: date) -> list[SignalRun]:
         rows = self.conn.execute(
             """
