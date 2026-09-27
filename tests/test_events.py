@@ -75,7 +75,9 @@ def test_signal_time_drops_the_later_article_even_if_it_is_passed_in() -> None:
 def test_fixture_provider_also_hides_the_0915_article() -> None:
     event, rules = _loaded()
     as_of = datetime(2025, 4, 10, 9, 0, tzinfo=NY)
-    provider = FixtureNewsProvider.from_json(project_root() / "fixtures" / "news" / "sample_news.json")
+    provider = FixtureNewsProvider.from_json(
+        project_root() / "fixtures" / "news" / "sample_news.json"
+    )
     items = provider.news("NVDA", as_of - timedelta(hours=72), as_of, as_of)
     assert [item.id for item in items] == ["news-0830"]
     result = compute_event("NVDA", items, as_of=as_of, event=event, rules=rules, weight=25)
@@ -114,7 +116,9 @@ def test_distinct_headlines_both_count_and_the_sum_is_clamped() -> None:
         "A software unit posted an earnings beat after a long slump in services",
         as_of,
     )
-    result = compute_event("NVDA", [first, second], as_of=as_of, event=event, rules=rules, weight=25)
+    result = compute_event(
+        "NVDA", [first, second], as_of=as_of, event=event, rules=rules, weight=25
+    )
     assert float(dict(result.details)["raw_sum"]) == pytest.approx(1.26)
     assert result.raw_value == pytest.approx(1)
     assert result.score == pytest.approx(25)

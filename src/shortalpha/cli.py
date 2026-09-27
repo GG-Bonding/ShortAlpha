@@ -1,6 +1,7 @@
 """Command line."""
 
 import argparse
+import json
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -13,6 +14,7 @@ from shortalpha.errors import ConfigError, DataUnavailableError, ShortAlphaError
 from shortalpha.logging_utils import log_failure
 from shortalpha.paths import project_root
 from shortalpha.providers.factory import build_market_provider, build_universe_provider
+from shortalpha.signal.explain import format_explanation
 from shortalpha.storage import Store
 from shortalpha.universe import LiquidityStatus, evaluate_liquidity, format_number
 
@@ -28,6 +30,12 @@ def main(argv: list[str] | None = None) -> int:
     universe = sub.add_parser("universe")
     _add_config_arg(universe)
     universe.add_argument("--date", default=None)
+    explain = sub.add_parser("explain")
+    _add_config_arg(explain)
+    explain.add_argument("symbol")
+    explain.add_argument("--date", required=True)
+    explain.add_argument("--run-id", default=None)
+    explain.add_argument("--database", default=None)
     try:
         args = parser.parse_args(argv)
         if args.command == "version":
@@ -35,6 +43,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "universe":
             return _universe(args)
+        if args.command == "explain":
+            return _explain(args)
         return _check(args)
     except ConfigError as exc:
         print(f"config error: {exc}", file=sys.stderr)
@@ -54,14 +64,42 @@ def _load(args: argparse.Namespace) -> tuple[Path, AppConfig]:
     return root, load_config(config_path, root=root)
 
 
+def _database_path(root: Path, cfg: AppConfig, requested: str | None) -> Path:
+    if requested:
+        return Path(requested)
+    database_path = Path(cfg.database.path)
+    if database_path.is_absolute():
+        return database_path
+    return root / database_path
+
+
+def _explain(args: argparse.Namespace) -> int:
+    root, cfg = _load(args)
+    symbol = args.symbol.upper()
+    day = date.fromisoformat(args.date)
+    store = Store(_database_path(root, cfg, args.database), root / "migrations")
+    try:
+        runs = store.runs_on(day)
+        if args.run_id:
+            runs = [run for run in runs if run.run_id == args.run_id]
+        if not runs:
+            print(f"error: no snapshot for {symbol} on {day.isoformat()}", file=sys.stderr)
+            return 1
+        run = runs[-1]
+        loaded = store.get_snapshot(run.run_id)
+        if loaded is None:
+            print(f"error: snapshot row missing for {run.run_id}", file=sys.stderr)
+            return 1
+        document = json.loads(loaded[0])
+        print(format_explanation(document, symbol, run_id=run.run_id))
+        return 0
+    finally:
+        store.close()
+
+
 def _check(args: argparse.Namespace) -> int:
     root, cfg = _load(args)
-    if args.database:
-        database_path = Path(args.database)
-    else:
-        database_path = Path(cfg.database.path)
-        if not database_path.is_absolute():
-            database_path = root / database_path
+    database_path = _database_path(root, cfg, args.database)
     store = Store(database_path, root / "migrations")
     try:
         calendar = calendar_from_config(cfg)
