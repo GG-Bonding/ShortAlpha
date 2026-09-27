@@ -4,7 +4,7 @@
 
 这不是交易系统。它不会连接券商，也不会下单。
 
-当前进度：**Phase 5**。五项因子里的事件分已经按关键词规则实现。总分、快照、回放和评估还在后面。规则见 [docs/plan.md](docs/plan.md)、[docs/point-in-time-rules.md](docs/point-in-time-rules.md) 和 [docs/data-source-decision.md](docs/data-source-decision.md)。
+当前进度：**Phase 6**。五项因子可以合成总分并排出候选。快照、回放和评估还在后面。规则见 [docs/plan.md](docs/plan.md)、[docs/point-in-time-rules.md](docs/point-in-time-rules.md) 和 [docs/data-source-decision.md](docs/data-source-decision.md)。
 
 ## 运行
 
@@ -43,3 +43,5 @@ pytest
 成交量优先用当天 04:00 到 09:00 的盘前量，除以过去 20 个交易日同一窗口的平均量。默认的 Alpaca IEX 行情不是合并盘前成交，这时 `premarket_volume_available` 为 false，改用最近一个完整交易日的成交量除以再往前 20 日的平均成交量。分母是 0 或历史不够时直接报错，不会记成 0 分。
 
 事件分不调用模型。标题和摘要按 `config/event_rules.yaml` 归类，新鲜度是 `exp(-0.05 * 小时)`，超过 72 小时的稿件丢掉。同一族里正负说法同时出现则该族不计分。多条事件的贡献相加后夹到 -1 到 1，再映射到 0–25。没有合格事件时是 12.5 分，原因是 `no qualifying events`，这不是故障。09:15 发布的新闻不会进入 09:00 的信号。新鲜的重大利空会标成 `SEVERE_NEGATIVE`。
+
+总分是五项分数之和。`>= 80` 是 `LONG_CANDIDATE`，`70–80` 是 `WATCH`，更低是 `PASS`。只在达到 80 的股票里取前 3。没有达到 80 的股票时，结果是 `NO_TRADE`，不会把观察名单顶上去。`SEVERE_NEGATIVE` 不参与排序。`EXTREME_RISK_OFF` 仍会留下分数，同时把这次运行标成 `NO_TRADE`。VIX 缺失时不把它当成 0。

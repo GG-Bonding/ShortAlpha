@@ -45,7 +45,7 @@ tests/
 | 3 | 动量、相对强弱、价格行为 | 完成 |
 | 4 | 成交量与盘前 | 完成 |
 | 5 | 新闻、事件分类、新鲜度、事件分 | 完成 |
-| 6 | 总分、排序、LONG_CANDIDATE / WATCH / PASS / NO_TRADE | 未开始 |
+| 6 | 总分、排序、LONG_CANDIDATE / WATCH / PASS / NO_TRADE | 完成 |
 | 7 | Signal Snapshot、持久化、解释 | 未开始 |
 | 8 | 向前收益、SPY、超额收益 | 未开始 |
 | 9 | 历史回放 | 未开始 |
