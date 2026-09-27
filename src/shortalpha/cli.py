@@ -10,10 +10,17 @@ from zoneinfo import ZoneInfo
 from shortalpha import __version__
 from shortalpha.calendar import calendar_from_config
 from shortalpha.config import AppConfig, load_config
+from shortalpha.domain import Split
 from shortalpha.errors import ConfigError, DataUnavailableError, ShortAlphaError
 from shortalpha.logging_utils import log_failure
 from shortalpha.paths import project_root
-from shortalpha.providers.factory import build_market_provider, build_universe_provider
+from shortalpha.providers.factory import (
+    build_market_provider,
+    build_news_provider,
+    build_premarket_provider,
+    build_universe_provider,
+)
+from shortalpha.replay.engine import replay
 from shortalpha.signal.explain import format_explanation
 from shortalpha.storage import Store
 from shortalpha.universe import LiquidityStatus, evaluate_liquidity, format_number
@@ -36,6 +43,11 @@ def main(argv: list[str] | None = None) -> int:
     explain.add_argument("--date", required=True)
     explain.add_argument("--run-id", default=None)
     explain.add_argument("--database", default=None)
+    replay_cmd = sub.add_parser("replay")
+    _add_config_arg(replay_cmd)
+    replay_cmd.add_argument("--from", dest="start", required=True)
+    replay_cmd.add_argument("--to", dest="end", required=True)
+    replay_cmd.add_argument("--database", default=None)
     try:
         args = parser.parse_args(argv)
         if args.command == "version":
@@ -45,6 +57,8 @@ def main(argv: list[str] | None = None) -> int:
             return _universe(args)
         if args.command == "explain":
             return _explain(args)
+        if args.command == "replay":
+            return _replay(args)
         return _check(args)
     except ConfigError as exc:
         print(f"config error: {exc}", file=sys.stderr)
@@ -71,6 +85,55 @@ def _database_path(root: Path, cfg: AppConfig, requested: str | None) -> Path:
     if database_path.is_absolute():
         return database_path
     return root / database_path
+
+
+def _replay(args: argparse.Namespace) -> int:
+    try:
+        start = date.fromisoformat(args.start)
+        end = date.fromisoformat(args.end)
+    except ValueError:
+        print("error: --from and --to must be YYYY-MM-DD", file=sys.stderr)
+        return 2
+    root, cfg = _load(args)
+    calendar = calendar_from_config(cfg)
+    store = Store(_database_path(root, cfg, args.database), root / "migrations")
+    market = build_market_provider(cfg, root, calendar)
+    premarket = build_premarket_provider(cfg, root)
+    news = build_news_provider(cfg, root)
+    universe = build_universe_provider(cfg, root)
+    try:
+        results = replay(
+            cfg,
+            root=root,
+            calendar=calendar,
+            market=market,
+            premarket=premarket,
+            news=news,
+            universe=universe,
+            store=store,
+            start=start,
+            end=end,
+            splits_for=_no_splits,
+            notes="corporate_actions=not_loaded",
+        )
+    finally:
+        store.close()
+        for provider in (market, premarket, news):
+            close = getattr(provider, "close", None)
+            if close is not None:
+                close()
+    lines = ["ShortAlpha replay", f"sessions: {len(results)}"]
+    lines.extend(
+        f"{item.signal_date.isoformat()} hash={item.snapshot_hash} "
+        f"no_trade={str(item.no_trade).lower()} candidates={item.candidate_size}"
+        for item in results
+    )
+    print("\n".join(lines))
+    return 0
+
+
+def _no_splits(symbol: str, start: date, end: date, as_of: datetime) -> tuple[Split, ...]:
+    return ()
 
 
 def _explain(args: argparse.Namespace) -> int:

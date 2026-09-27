@@ -4,7 +4,7 @@
 
 这不是交易系统。它不会连接券商，也不会下单。
 
-当前进度：**Phase 8**。信号日之后的 1、2、3、5 个交易日收益已经能按交易日历计算。回放和评估还在后面。规则见 [docs/plan.md](docs/plan.md)、[docs/point-in-time-rules.md](docs/point-in-time-rules.md) 和 [docs/data-source-decision.md](docs/data-source-decision.md)。
+当前进度：**Phase 9**。历史回放会在每个交易日 09:00 用同一套因子重跑，并跳过周末和假日。评估还在后面。规则见 [docs/plan.md](docs/plan.md)、[docs/point-in-time-rules.md](docs/point-in-time-rules.md) 和 [docs/data-source-decision.md](docs/data-source-decision.md)。
 
 ## 运行
 

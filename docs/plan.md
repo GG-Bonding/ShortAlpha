@@ -48,7 +48,7 @@ tests/
 | 6 | 总分、排序、LONG_CANDIDATE / WATCH / PASS / NO_TRADE | 完成 |
 | 7 | Signal Snapshot、持久化、解释 | 完成 |
 | 8 | 向前收益、SPY、超额收益 | 完成 |
-| 9 | 历史回放 | 未开始 |
+| 9 | 历史回放 | 完成 |
 | 10 | 评估、分数桶、因子归因 | 未开始 |
 
 每个阶段的完成标准：ruff format、ruff check、单元测试、集成测试、程序能运行、README 和本文件更新。然后单独提交。不跳过测试，不用 `--no-verify`。

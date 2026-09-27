@@ -86,6 +86,7 @@ def save_signal(
     notes: str,
     output_dir: Path | None = None,
     run_id: str | None = None,
+    duration_ms: int | None = None,
 ) -> str:
     run_id = run_id or str(uuid.uuid4())
     document = build_snapshot(
@@ -109,7 +110,7 @@ def save_signal(
         eligible_size=eligible_size,
         scored_size=len(book.ranked) + len(book.excluded),
         candidate_size=len(book.published),
-        duration_ms=None,
+        duration_ms=duration_ms,
         provider_errors=provider_errors,
         missing_data_count=missing_data_count,
         market_regime=book.regime,
