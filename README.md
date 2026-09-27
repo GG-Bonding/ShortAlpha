@@ -4,7 +4,7 @@
 
 这不是交易系统。它不会连接券商，也不会下单。
 
-当前进度：**Phase 2**。配置、日历、SQLite、股票池和流动性过滤已实现。因子、扫描、回放和评估在后续阶段加入。规则见 [docs/plan.md](docs/plan.md)、[docs/point-in-time-rules.md](docs/point-in-time-rules.md) 和 [docs/data-source-decision.md](docs/data-source-decision.md)。
+当前进度：**Phase 3**。动量、相对强弱和价格行为已按锁定公式实现。成交量、事件、总分、快照、回放和评估还在后面。规则见 [docs/plan.md](docs/plan.md)、[docs/point-in-time-rules.md](docs/point-in-time-rules.md) 和 [docs/data-source-decision.md](docs/data-source-decision.md)。
 
 ## 运行
 
@@ -37,3 +37,5 @@ pytest
 信号时点是交易日 09:00 `America/New_York`。任何因子输入都要满足 `available_at <= signal_time`。当天 09:15 的新闻不能进入当天 09:00 的信号。详情见 point-in-time 文档。
 
 权重之和必须等于 100，否则程序拒绝启动。
+
+动量只用已经收盘的交易日，不用盘前价。`R5 > 25%` 时动量分减半。相对强弱比较同一窗口里的个股、SPY 和行业 ETF。行业映射在 `config/sector_map.yaml`，来自 S&P 500 的 GICS 行业；只在 Nasdaq-100、不在这份 S&P 500 快照里的股票没有映射，相对强弱会报缺失，不会改用 SPY 充数。价格行为在缺口超过 3% 之后开始惩罚，更大的缺口不会得到更高的分。没有盘前价格时，这一项记为权重的一半，并写明是中性降级，不编造缺口。

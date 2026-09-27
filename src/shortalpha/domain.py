@@ -25,6 +25,32 @@ class EventRisk(Enum):
     SEVERE_NEGATIVE = "SEVERE_NEGATIVE"
 
 
+@dataclass(frozen=True)
+class Split:
+    symbol: str
+    ex_date: date
+    old_rate: float
+    new_rate: float
+
+    def __post_init__(self) -> None:
+        validate_symbol(self.symbol)
+        if self.old_rate <= 0 or self.new_rate <= 0:
+            raise ValueError("split rates must be positive")
+
+
+@dataclass(frozen=True)
+class FactorResult:
+    name: str
+    raw_value: float | None
+    normalized_value: float | None
+    score: float | None
+    available: bool
+    degraded: bool = False
+    reasons: tuple[str, ...] = ()
+    risks: tuple[str, ...] = ()
+    details: tuple[tuple[str, str], ...] = ()
+
+
 def ensure_aware(name: str, value: datetime) -> None:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{name} must be timezone-aware")
