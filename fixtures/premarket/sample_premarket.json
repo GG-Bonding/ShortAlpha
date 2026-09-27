@@ -1,0 +1,43 @@
+{
+  "windows": [
+    {
+      "symbol": "AAA",
+      "session_date": "2025-04-10",
+      "available": true,
+      "volume": 180000,
+      "last_price": 11.2,
+      "high": 11.4,
+      "low": 10.7,
+      "event_time": "2025-04-10T08:59:00-04:00",
+      "published_at": "2025-04-10T09:00:00-04:00",
+      "available_at": "2025-04-10T09:00:00-04:00",
+      "reason": ""
+    },
+    {
+      "symbol": "BBB",
+      "session_date": "2025-04-10",
+      "available": false,
+      "volume": null,
+      "last_price": null,
+      "high": null,
+      "low": null,
+      "event_time": null,
+      "published_at": null,
+      "available_at": null,
+      "reason": "feed does not include consolidated premarket"
+    },
+    {
+      "symbol": "CCC",
+      "session_date": "2025-04-10",
+      "available": true,
+      "volume": 10,
+      "last_price": 5.0,
+      "high": 5.0,
+      "low": 5.0,
+      "event_time": "2025-04-10T09:30:00-04:00",
+      "published_at": "2025-04-10T09:30:00-04:00",
+      "available_at": "2025-04-10T09:30:00-04:00",
+      "reason": ""
+    }
+  ]
+}

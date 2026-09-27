@@ -1,0 +1,9 @@
+{
+  "list_as_of": "2026-09-01",
+  "point_in_time_membership": false,
+  "symbols": [
+    {"symbol": "AAA", "sources": ["sp500"]},
+    {"symbol": "BBB", "sources": ["sp500", "nasdaq100"]},
+    {"symbol": "CCC", "sources": ["nasdaq100"]}
+  ]
+}

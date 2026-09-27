@@ -1,0 +1,1 @@
+"""Fixture and vendor providers."""

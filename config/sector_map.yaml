@@ -1,0 +1,5 @@
+# Fixture symbols only. A broader map is added with the real universe.
+symbols:
+  AAA: XLK
+  BBB: XLF
+  CCC: XLE
