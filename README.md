@@ -4,7 +4,7 @@
 
 这不是交易系统。它不会连接券商，也不会下单。
 
-当前进度：**Phase 9**。历史回放会在每个交易日 09:00 用同一套因子重跑，并跳过周末和假日。评估还在后面。规则见 [docs/plan.md](docs/plan.md)、[docs/point-in-time-rules.md](docs/point-in-time-rules.md) 和 [docs/data-source-decision.md](docs/data-source-decision.md)。
+当前进度：**Phase 10**。可以扫描一个交易日、回放一段历史，再评估分数和随后收益的关系。规则见 [docs/plan.md](docs/plan.md)、[docs/point-in-time-rules.md](docs/point-in-time-rules.md) 和 [docs/data-source-decision.md](docs/data-source-decision.md)。
 
 ## 运行
 
@@ -55,3 +55,18 @@ shortalpha explain NVDA --date 2024-06-20
 解释会列出五项分数、加分原因和风险。同一天有多次运行时，默认解释最新的一次。
 
 向前收益的入场价是信号日开盘，出场价是之后第 n 个交易日的开盘。周末和 NYSE 假日不算交易日。超额收益是个股收益减去同一窗口的 SPY。最大不利波动只用入场日到出场前一日的最低价，不用出场当天的盘中低点。信号日 09:00 还看不到当天日线，所以那时不会算出向前收益。缺 SPY 时不把超额记成 0。
+
+```bash
+shortalpha replay --from 2024-06-18 --to 2024-06-20
+```
+
+回放只读取 `available_at <= 当天 09:00` 的数据。同一配置和同一输入跑两次，快照哈希相同，`run_id` 不同。周末和 NYSE 假日不会产生信号。当前命令行还没有公司行动数据源，运行备注会写 `corporate_actions=not_loaded`，不会假装已经核对过拆分。
+
+```bash
+shortalpha scan --date 2024-06-20
+shortalpha evaluate --as-of 2024-06-28
+```
+
+`scan` 就是回放中的一个交易日，并打印候选、分数、原因和风险。默认配置用的是仓库里的 fixture。fixture 没有完整行情时，扫描会报缺失数据，而不是编出候选。接 Alpaca 时把 `providers` 改成 `alpaca`，并设置 `APCA_API_KEY_ID` 和 `APCA_API_SECRET_KEY`。免费 IEX 行情不会被当成合并盘前成交。
+
+`evaluate` 只用每个信号日最新的一次运行，统计全部打分股票，不只看前三名。某个持有期的行情还没到，该期就不进入命中率。高分股票的平均超额没有高于低分时，输出 `HIGH SCORE DOES NOT BEAT LOW SCORE`。分数桶的平均超额没有严格上升时，输出 `NO MONOTONIC RELATIONSHIP`。样本不够时输出 `INSUFFICIENT SAMPLE`。没有亏损时盈亏比是 `UNDEFINED`。

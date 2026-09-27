@@ -4,6 +4,22 @@ from zoneinfo import ZoneInfo
 from shortalpha.cli import main
 
 
+def test_scan_rejects_a_holiday(capsys, tmp_path, repo_root) -> None:
+    code = main(
+        [
+            "scan",
+            "--config",
+            str(repo_root / "config" / "default.yaml"),
+            "--date",
+            "2024-07-04",
+            "--database",
+            str(tmp_path / "scan.db"),
+        ]
+    )
+    assert code == 1
+    assert "not a trading session" in capsys.readouterr().err
+
+
 def test_version_prints_package_version(capsys) -> None:
     assert main(["version"]) == 0
     assert capsys.readouterr().out.strip() == "shortalpha 0.1.0"

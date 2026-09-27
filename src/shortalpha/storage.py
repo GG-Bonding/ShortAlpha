@@ -200,6 +200,25 @@ class Store:
             ),
         )
 
+    def forward_for(self, run_id: str) -> list[sqlite3.Row]:
+        return list(
+            self.conn.execute(
+                """
+                SELECT * FROM forward_returns
+                WHERE run_id = ?
+                ORDER BY symbol, horizon
+                """,
+                (run_id,),
+            )
+        )
+
+    def all_runs(self) -> list[SignalRun]:
+        rows = self.conn.execute(
+            "SELECT run_id FROM signal_runs ORDER BY signal_date, created_at, run_id"
+        ).fetchall()
+        loaded = [self.get_run(row["run_id"]) for row in rows]
+        return [run for run in loaded if run is not None]
+
     def runs_on(self, signal_date: date) -> list[SignalRun]:
         rows = self.conn.execute(
             """

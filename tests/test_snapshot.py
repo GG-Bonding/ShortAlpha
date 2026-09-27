@@ -10,7 +10,7 @@ from shortalpha.domain import FactorResult, MarketRegime, SignalLabel
 from shortalpha.errors import ShortAlphaError
 from shortalpha.paths import project_root
 from shortalpha.scoring.rank import SymbolFactors, rank_symbols
-from shortalpha.signal.explain import format_explanation
+from shortalpha.signal.explain import format_explanation, format_scan
 from shortalpha.signal.snapshot import save_signal, snapshot_hash, write_snapshot_file
 from shortalpha.storage import Store
 from tests.factor_setup import signal_time
@@ -133,6 +133,18 @@ def test_explanation_includes_factor_scores_reasons_and_risks() -> None:
     assert "Momentum        21.2346 / 25" in text
     assert "+ Earnings beat" in text
     assert "- Premarket gap +6.8%" in text
+
+
+def test_scan_text_lists_reasons_risks_and_the_no_trade_flag() -> None:
+    document = json.loads(save_document())
+    text = format_scan(document)
+    assert "2024-06-20 09:00 ET" in text
+    assert "Market:" in text
+    assert "NORMAL" in text
+    assert "#1 NVDA" in text
+    assert "+ Earnings beat" in text
+    assert "- Premarket gap +6.8%" in text
+    assert text.endswith("NO_TRADE:\nfalse")
 
 
 def test_missing_symbol_is_an_error() -> None:
