@@ -90,14 +90,42 @@ def fill_forward_returns(
                 mae=result.mae,
                 mfe=result.mfe,
                 code_version=__version__,
+                label_available_at=result.label_available_at,
             )
             existing.add(key)
             inserted += 1
     return inserted
 
 
-def latest_runs(store: Store) -> list[SignalRun]:
+def select_runs(
+    store: Store,
+    *,
+    strategy_version: str,
+    run_mode: str,
+) -> list[SignalRun]:
+    """Latest run for each session inside one strategy version and one run mode."""
     chosen: dict[date, SignalRun] = {}
     for run in store.all_runs():
-        chosen[run.signal_date] = run
+        if run.strategy_version != strategy_version or run.run_mode != run_mode:
+            continue
+        previous = chosen.get(run.signal_date)
+        if previous is None or (run.created_at, run.run_id) >= (
+            previous.created_at,
+            previous.run_id,
+        ):
+            chosen[run.signal_date] = run
     return [chosen[day] for day in sorted(chosen)]
+
+
+def runs_by_ids(store: Store, run_ids: tuple[str, ...]) -> list[SignalRun]:
+    loaded: list[SignalRun] = []
+    seen: set[date] = set()
+    for run_id in run_ids:
+        run = store.get_run(run_id)
+        if run is None:
+            raise ValueError(f"pinned run is missing: {run_id}")
+        if run.signal_date in seen:
+            raise ValueError(f"pinned runs repeat {run.signal_date.isoformat()}")
+        seen.add(run.signal_date)
+        loaded.append(run)
+    return sorted(loaded, key=lambda run: run.signal_date)

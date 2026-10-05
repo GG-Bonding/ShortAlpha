@@ -79,6 +79,9 @@ def _save(store: Store, output_dir, *, created_at: datetime, run_id: str) -> str
         universe_list_as_of=None,
         point_in_time_membership=False,
         notes="",
+        strategy_version="v0",
+        run_mode="replay",
+        event_rules_hash="rules",
         output_dir=output_dir,
         run_id=run_id,
     )

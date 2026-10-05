@@ -23,6 +23,7 @@ class HorizonReturn:
     excess_return: float
     mae: float
     mfe: float
+    label_available_at: datetime
 
 
 def compute_forward_returns(
@@ -72,6 +73,7 @@ def compute_forward_returns(
             _adjusted(stock[day].high, day, exit_session, splits, symbol) / entry_price - 1
             for day in path
         ]
+        label_at = max(exit_bar.available_at, spy_exit.available_at)
         completed.append(
             HorizonReturn(
                 symbol=symbol,
@@ -85,6 +87,7 @@ def compute_forward_returns(
                 excess_return=stock_return - spy_return,
                 mae=min(lows),
                 mfe=max(highs),
+                label_available_at=label_at,
             )
         )
     return tuple(completed), tuple(missing)

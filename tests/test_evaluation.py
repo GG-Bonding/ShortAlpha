@@ -69,13 +69,47 @@ def test_a_higher_score_that_earns_less_is_reported_as_failure() -> None:
     assert "completed: 0" in text
 
 
+def test_an_earlier_as_of_does_not_read_a_label_stored_later() -> None:
+    later = datetime(2024, 6, 28, 16, 0, tzinfo=NY)
+    earlier = datetime(2024, 6, 21, 9, 0, tzinfo=NY)
+    rows = [
+        {**_forward("HIGH", -0.1, -0.1), "label_available_at": later.isoformat()},
+        {**_forward("LOW", 0.2, 0.2), "label_available_at": later.isoformat()},
+    ]
+    text = render_evaluation(
+        [(_snapshot([_symbol("HIGH", 90, 20), _symbol("LOW", 50, 5)]), rows)],
+        long_threshold=80,
+        horizons=(1, 2, 3, 5),
+        buckets=((80, 100),),
+        min_bucket_count=5,
+        as_of=earlier,
+    )
+    assert "HIGH SCORE DOES NOT BEAT LOW SCORE" not in text
+    assert "cohort: ALL" in text
+    assert "completed: 0" in text
+
+
+def test_no_trade_withholds_names_that_remain_on_the_candidate_list() -> None:
+    snapshot = {
+        "signal_date": "2024-06-20",
+        "no_trade": True,
+        "symbols": [_symbol("AAA", 90, 20)],
+        "ranked": [{**_symbol("AAA", 90, 20), "thesis_veto": None}],
+    }
+    text = _render(snapshot, [_forward("AAA", 0.1, 0.1)])
+    published = text.split("cohort: PUBLISHED", 1)[1].split("cohort: VETOED", 1)[0]
+    assert "completed: 0" in published
+    withheld = text.split("cohort: NOT_SELECTED", 1)[1].split("event groups", 1)[0]
+    assert "completed: 1" in withheld
+
+
 def test_all_winners_leave_the_win_loss_ratio_undefined() -> None:
     text = _render(
         _snapshot([_symbol("AAA", 90, 1), _symbol("BBB", 91, 1)]),
         [_forward("AAA", 0.1, 0.1), _forward("BBB", 0.2, 0.2)],
     )
     assert "win_loss: UNDEFINED" in text
-    assert "momentum: spearman=UNDEFINED" in text
+    assert "momentum: days=0 mean_spearman=UNDEFINED" in text
 
 
 def test_monotonic_buckets_and_a_broken_ladder() -> None:
@@ -97,8 +131,9 @@ def test_monotonic_buckets_and_a_broken_ladder() -> None:
         min_bucket_count=5,
     )
     assert "1D monotonic: MONOTONIC" in text
+    assert "monotonic_use: DIAGNOSTIC" in text
     assert "NO MONOTONIC RELATIONSHIP" not in text
-    assert "momentum: spearman=1.0000" in text
+    assert "momentum: days=1 mean_spearman=1.0000" in text
 
     broken = []
     for row, item in zip(rows, forwards, strict=True):
@@ -159,6 +194,9 @@ def test_fill_writes_only_completed_horizons_and_does_not_repeat(tmp_path, repo_
             universe_list_as_of=None,
             point_in_time_membership=False,
             notes="",
+            strategy_version="v0",
+            run_mode="replay",
+            event_rules_hash="rules",
         )
         run = store.get_run(run_id)
         loaded = store.get_snapshot(run_id)

@@ -1,7 +1,8 @@
 """Alpaca Benzinga news.
 
-available_at is created_at. updated_at is ignored, so a later edit does not
-remove an article that was already public at the signal time.
+The stored headline is the text returned now. If updated_at is later than
+created_at, that text was not proven public at created_at, so available_at is
+updated_at. An unchanged article keeps created_at.
 """
 
 import os
@@ -164,6 +165,12 @@ class AlpacaNewsProvider:
 
 def _item_from_alpaca(symbol: str, raw: dict[str, object]) -> NewsItem:
     created = parse_dt(raw["created_at"], "created_at")
+    available = created
+    updated = raw.get("updated_at")
+    if updated not in (None, ""):
+        revised = parse_dt(updated, "updated_at")
+        if revised > created:
+            available = revised
     symbols = raw.get("symbols") or [symbol]
     if not isinstance(symbols, list) or not all(isinstance(item, str) for item in symbols):
         raise ValueError("news symbols were not a list of strings")
@@ -181,6 +188,6 @@ def _item_from_alpaca(symbol: str, raw: dict[str, object]) -> NewsItem:
         source=str(raw["source"]),
         event_time=created,
         published_at=created,
-        available_at=created,
+        available_at=available,
         url=url,
     )

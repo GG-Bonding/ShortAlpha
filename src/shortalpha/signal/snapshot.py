@@ -7,7 +7,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from shortalpha.config import WeightsConfig
-from shortalpha.domain import FactorResult, SignalRun
+from shortalpha.domain import ClassifiedEvent, FactorResult, SignalRun
 from shortalpha.scoring.rank import RankedBook, ScoredSymbol
 from shortalpha.storage import Store
 
@@ -84,6 +84,9 @@ def save_signal(
     universe_list_as_of: date | None,
     point_in_time_membership: bool,
     notes: str,
+    strategy_version: str,
+    run_mode: str,
+    event_rules_hash: str,
     output_dir: Path | None = None,
     run_id: str | None = None,
     duration_ms: int | None = None,
@@ -119,6 +122,9 @@ def save_signal(
         universe_list_as_of=universe_list_as_of,
         point_in_time_membership=point_in_time_membership,
         notes=notes,
+        strategy_version=strategy_version,
+        run_mode=run_mode,
+        event_rules_hash=event_rules_hash,
     )
     store.insert_signal(run, text, digest, _factor_rows(book))
     if output_dir is not None:
@@ -132,6 +138,8 @@ def _symbol_payload(
     factors: dict[str, object] = {}
     for factor in row.factors:
         factors[factor.name] = {
+            "classified_events": [_event_payload(item) for item in factor.events],
+            "details": dict(factor.details),
             "normalized_value": _round(factor.normalized_value),
             "raw_value": _round(factor.raw_value),
             "reasons": list(factor.reasons),
@@ -149,6 +157,25 @@ def _symbol_payload(
         "thesis": row.thesis,
         "thesis_veto": row.thesis_veto,
         "total_score": _round(row.total_score),
+    }
+
+
+def _event_payload(event: ClassifiedEvent) -> dict[str, object]:
+    return {
+        "available_at": event.available_at.isoformat(),
+        "content_sha256": event.content_sha256,
+        "direction": event.direction,
+        "family": event.family,
+        "freshness": event.freshness,
+        "importance": event.importance,
+        "label": event.label,
+        "news_id": event.news_id,
+        "published_at": event.published_at.isoformat(),
+        "reaction": event.reaction,
+        "rule_id": event.rule_id,
+        "rules_sha256": event.rules_sha256,
+        "signed": event.signed,
+        "source": event.source,
     }
 
 

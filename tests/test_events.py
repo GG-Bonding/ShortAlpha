@@ -1,10 +1,10 @@
 import math
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 import pytest
 
 from shortalpha.config import load_config
-from shortalpha.domain import EventRisk, NewsItem
+from shortalpha.domain import DailyBar, EventRisk, NewsItem
 from shortalpha.event_rules import load_event_rules
 from shortalpha.factors.events import compute_event
 from shortalpha.factors.scale import scale_to_weight
@@ -204,3 +204,52 @@ def test_articles_older_than_72_hours_are_dropped_and_the_boundary_is_kept() -> 
     freshness = math.exp(-0.05 * 72)
     assert boundary.raw_value == pytest.approx(0.9 * freshness * 0.7)
     assert boundary.reasons == ("Earnings beat",)
+
+
+def test_reaction_uses_the_close_before_the_headline_and_the_close_before_the_signal() -> None:
+    event, rules = _loaded()
+    session = date(2024, 6, 20)
+    as_of = datetime(2024, 6, 20, 9, 0, tzinfo=NY)
+    news_at = datetime(2024, 6, 18, 15, 0, tzinfo=NY)
+    bars = [
+        _daily("NVDA", date(2024, 6, 17), 100),
+        _daily("NVDA", date(2024, 6, 18), 110),
+    ]
+    result = compute_event(
+        "NVDA",
+        [_item("n1", "NVDA earnings beat", news_at)],
+        as_of=as_of,
+        event=event,
+        rules=rules,
+        weight=25,
+        rules_sha256="rules-hash",
+        bars=bars,
+        session=session,
+    )
+    assert len(result.events) == 1
+    observed = result.events[0]
+    assert observed.news_id == "n1"
+    assert observed.rule_id == "earnings_beat"
+    assert observed.label == "Earnings beat"
+    assert observed.source == "fixture"
+    assert observed.published_at == news_at
+    assert observed.rules_sha256 == "rules-hash"
+    assert observed.content_sha256
+    assert observed.reaction == pytest.approx(0.10)
+
+
+def _daily(symbol: str, day: date, close: float) -> DailyBar:
+    stamp = datetime.combine(day, time(16, 0), tzinfo=NY)
+    return DailyBar(
+        symbol=symbol,
+        session_date=day,
+        open=close,
+        high=close,
+        low=close,
+        close=close,
+        volume=1_000_000,
+        event_time=stamp,
+        published_at=stamp,
+        available_at=stamp,
+        source="fixture",
+    )

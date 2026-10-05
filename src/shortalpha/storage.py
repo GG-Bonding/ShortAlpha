@@ -43,14 +43,16 @@ class Store:
         self.conn.commit()
 
     def insert_run(self, run: SignalRun) -> None:
+        _require_identity(run)
         self._execute(
             """
             INSERT INTO signal_runs (
                 run_id, signal_date, signal_time, timezone, config_hash, code_version,
                 created_at, universe_size, eligible_size, scored_size, candidate_size,
                 duration_ms, provider_errors, missing_data_count, market_regime, no_trade,
-                status, universe_list_as_of, point_in_time_membership, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                status, universe_list_as_of, point_in_time_membership, notes,
+                strategy_version, run_mode, event_rules_hash
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             _run_params(run),
         )
@@ -85,6 +87,9 @@ class Store:
             universe_list_as_of=None if list_as_of is None else date.fromisoformat(list_as_of),
             point_in_time_membership=bool(row["point_in_time_membership"]),
             notes=row["notes"],
+            strategy_version=row["strategy_version"] or "",
+            run_mode=row["run_mode"] or "",
+            event_rules_hash=row["event_rules_hash"] or "",
         )
 
     def insert_snapshot(
@@ -111,6 +116,7 @@ class Store:
         factors: list[tuple[str, FactorResult]],
     ) -> None:
         ensure_aware("created_at", run.created_at)
+        _require_identity(run)
         try:
             self.conn.execute(
                 """
@@ -118,8 +124,9 @@ class Store:
                     run_id, signal_date, signal_time, timezone, config_hash, code_version,
                     created_at, universe_size, eligible_size, scored_size, candidate_size,
                     duration_ms, provider_errors, missing_data_count, market_regime, no_trade,
-                    status, universe_list_as_of, point_in_time_membership, notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    status, universe_list_as_of, point_in_time_membership, notes,
+                    strategy_version, run_mode, event_rules_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 _run_params(run),
             )
@@ -151,6 +158,34 @@ class Store:
                         json.dumps(list(factor.details)),
                     ),
                 )
+                for event in factor.events:
+                    self.conn.execute(
+                        """
+                        INSERT INTO event_observations (
+                            run_id, symbol, news_id, rule_id, label, family, source,
+                            published_at, available_at, content_sha256, rules_sha256,
+                            signed, direction, importance, freshness, reaction
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            run.run_id,
+                            symbol,
+                            event.news_id,
+                            event.rule_id,
+                            event.label,
+                            event.family,
+                            event.source,
+                            event.published_at.isoformat(),
+                            event.available_at.isoformat(),
+                            event.content_sha256,
+                            event.rules_sha256,
+                            event.signed,
+                            event.direction,
+                            event.importance,
+                            event.freshness,
+                            event.reaction,
+                        ),
+                    )
             self.conn.commit()
         except sqlite3.Error:
             self.conn.rollback()
@@ -172,16 +207,18 @@ class Store:
         mae: float,
         mfe: float,
         code_version: str,
+        label_available_at: datetime,
     ) -> None:
         if horizon not in {1, 2, 3, 5}:
             raise ValueError("horizon must be 1, 2, 3, or 5")
+        ensure_aware("label_available_at", label_available_at)
         self._execute(
             """
             INSERT INTO forward_returns (
                 run_id, symbol, horizon, entry_session_date, entry_price,
                 exit_session_date, exit_price, stock_return, spy_return,
-                excess_return, mae, mfe, code_version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                excess_return, mae, mfe, code_version, label_available_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -197,11 +234,14 @@ class Store:
                 mae,
                 mfe,
                 code_version,
+                label_available_at.isoformat(),
             ),
         )
 
-    def forward_for(self, run_id: str) -> list[sqlite3.Row]:
-        return list(
+    def forward_for(self, run_id: str, *, as_of: datetime | None = None) -> list[sqlite3.Row]:
+        if as_of is not None:
+            ensure_aware("as_of", as_of)
+        rows = list(
             self.conn.execute(
                 """
                 SELECT * FROM forward_returns
@@ -209,6 +249,171 @@ class Store:
                 ORDER BY symbol, horizon
                 """,
                 (run_id,),
+            )
+        )
+        if as_of is None:
+            return rows
+        visible: list[sqlite3.Row] = []
+        for row in rows:
+            stamp = row["label_available_at"]
+            if stamp is None:
+                continue
+            if datetime.fromisoformat(stamp) <= as_of:
+                visible.append(row)
+        return visible
+
+    def insert_registry(
+        self,
+        *,
+        strategy_version: str,
+        recorded_at: datetime,
+        role: str,
+        parent_version: str | None,
+        config_hash: str,
+        event_rules_hash: str,
+        change_json: str,
+    ) -> None:
+        ensure_aware("recorded_at", recorded_at)
+        if role not in {"official", "candidate", "retired"}:
+            raise ValueError("role must be official, candidate, or retired")
+        self._execute(
+            """
+            INSERT INTO strategy_registry (
+                strategy_version, recorded_at, role, parent_version, config_hash,
+                event_rules_hash, change_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                strategy_version,
+                recorded_at.isoformat(),
+                role,
+                parent_version,
+                config_hash,
+                event_rules_hash,
+                change_json,
+            ),
+        )
+
+    def latest_registry(self, strategy_version: str) -> sqlite3.Row | None:
+        return self.conn.execute(
+            """
+            SELECT * FROM strategy_registry
+            WHERE strategy_version = ?
+            ORDER BY recorded_at DESC
+            LIMIT 1
+            """,
+            (strategy_version,),
+        ).fetchone()
+
+    def official_version(self, default: str) -> str:
+        row = self.conn.execute(
+            """
+            SELECT strategy_version FROM strategy_registry
+            WHERE role = 'official'
+            ORDER BY recorded_at DESC, strategy_version DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        if row is None:
+            return default
+        return str(row["strategy_version"])
+
+    def insert_experiment(
+        self,
+        *,
+        experiment_id: str,
+        created_at: datetime,
+        baseline_version: str,
+        candidate_version: str,
+        run_mode: str,
+        baseline_run_ids: str,
+        change_json: str,
+        dev_end: date,
+        validation_start: date,
+        validation_end: date,
+        config_hash: str,
+        event_rules_hash: str,
+    ) -> None:
+        ensure_aware("created_at", created_at)
+        self._execute(
+            """
+            INSERT INTO experiments (
+                experiment_id, created_at, baseline_version, candidate_version, run_mode,
+                baseline_run_ids, change_json, dev_end, validation_start, validation_end,
+                config_hash, event_rules_hash
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                experiment_id,
+                created_at.isoformat(),
+                baseline_version,
+                candidate_version,
+                run_mode,
+                baseline_run_ids,
+                change_json,
+                dev_end.isoformat(),
+                validation_start.isoformat(),
+                validation_end.isoformat(),
+                config_hash,
+                event_rules_hash,
+            ),
+        )
+
+    def experiments(self) -> list[sqlite3.Row]:
+        return list(
+            self.conn.execute("SELECT * FROM experiments ORDER BY created_at, experiment_id")
+        )
+
+    def experiment(self, experiment_id: str) -> sqlite3.Row | None:
+        return self.conn.execute(
+            "SELECT * FROM experiments WHERE experiment_id = ?",
+            (experiment_id,),
+        ).fetchone()
+
+    def insert_decision(
+        self,
+        *,
+        decision_id: str,
+        experiment_id: str,
+        recorded_at: datetime,
+        as_of: datetime,
+        action: str,
+        terminal: bool,
+        shadow_run_ids: str,
+        evidence_json: str,
+    ) -> None:
+        ensure_aware("recorded_at", recorded_at)
+        ensure_aware("as_of", as_of)
+        if action not in {"KEEP_CURRENT", "PROMOTE"}:
+            raise ValueError("action must be KEEP_CURRENT or PROMOTE")
+        self._execute(
+            """
+            INSERT INTO evolution_decisions (
+                decision_id, experiment_id, recorded_at, as_of, action, terminal,
+                shadow_run_ids, evidence_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                decision_id,
+                experiment_id,
+                recorded_at.isoformat(),
+                as_of.isoformat(),
+                action,
+                int(terminal),
+                shadow_run_ids,
+                evidence_json,
+            ),
+        )
+
+    def decisions_for(self, experiment_id: str) -> list[sqlite3.Row]:
+        return list(
+            self.conn.execute(
+                """
+                SELECT * FROM evolution_decisions
+                WHERE experiment_id = ?
+                ORDER BY recorded_at, decision_id
+                """,
+                (experiment_id,),
             )
         )
 
@@ -249,6 +454,11 @@ class Store:
             raise
 
 
+def _require_identity(run: SignalRun) -> None:
+    if not run.strategy_version or not run.run_mode or not run.event_rules_hash:
+        raise ValueError("strategy_version, run_mode, and event_rules_hash are required")
+
+
 def _run_params(run: SignalRun) -> tuple[object, ...]:
     return (
         run.run_id,
@@ -271,4 +481,7 @@ def _run_params(run: SignalRun) -> tuple[object, ...]:
         None if run.universe_list_as_of is None else run.universe_list_as_of.isoformat(),
         int(run.point_in_time_membership),
         run.notes,
+        run.strategy_version,
+        run.run_mode,
+        run.event_rules_hash,
     )

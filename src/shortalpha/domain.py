@@ -26,6 +26,32 @@ class EventRisk(Enum):
 
 
 @dataclass(frozen=True)
+class ClassifiedEvent:
+    news_id: str
+    rule_id: str
+    label: str
+    family: str
+    source: str
+    published_at: datetime
+    available_at: datetime
+    content_sha256: str
+    rules_sha256: str
+    signed: float
+    direction: float
+    importance: float
+    freshness: float
+    reaction: float | None = None
+
+    def __post_init__(self) -> None:
+        if not self.news_id or not self.rule_id or not self.label:
+            raise ValueError("classified event needs an id, rule, and label")
+        ensure_aware("published_at", self.published_at)
+        ensure_aware("available_at", self.available_at)
+        if self.published_at > self.available_at:
+            raise ValueError("published_at must be <= available_at")
+
+
+@dataclass(frozen=True)
 class Split:
     symbol: str
     ex_date: date
@@ -49,6 +75,7 @@ class FactorResult:
     reasons: tuple[str, ...] = ()
     risks: tuple[str, ...] = ()
     details: tuple[tuple[str, str], ...] = ()
+    events: tuple[ClassifiedEvent, ...] = ()
 
 
 def ensure_aware(name: str, value: datetime) -> None:
@@ -200,6 +227,9 @@ class SignalRun:
     universe_list_as_of: date | None
     point_in_time_membership: bool
     notes: str
+    strategy_version: str = ""
+    run_mode: str = ""
+    event_rules_hash: str = ""
 
     def __post_init__(self) -> None:
         if not self.run_id:
@@ -208,3 +238,5 @@ class SignalRun:
         ensure_aware("created_at", self.created_at)
         if not self.status:
             raise ValueError("status is required")
+        if self.run_mode and self.run_mode not in {"live", "replay", "shadow"}:
+            raise ValueError("run_mode must be live, replay, or shadow")

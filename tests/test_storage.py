@@ -14,6 +14,10 @@ TABLES = [
     "signal_snapshots",
     "factor_values",
     "forward_returns",
+    "event_observations",
+    "strategy_registry",
+    "experiments",
+    "evolution_decisions",
 ]
 
 
@@ -39,6 +43,9 @@ def _run(run_id: str) -> SignalRun:
         universe_list_as_of=date(2026, 9, 1),
         point_in_time_membership=False,
         notes="",
+        strategy_version="v0",
+        run_mode="replay",
+        event_rules_hash="rules",
     )
 
 
@@ -128,6 +135,50 @@ def _seed(store: Store) -> None:
         INSERT INTO forward_returns (
             run_id, symbol, horizon, code_version
         ) VALUES ('run-a', 'AAA', 1, '0.1.0')
+        """
+    )
+    store.conn.execute(
+        """
+        INSERT INTO event_observations (
+            run_id, symbol, news_id, rule_id, label, family, source,
+            published_at, available_at, content_sha256, rules_sha256,
+            signed, direction, importance, freshness
+        ) VALUES (
+            'run-a', 'AAA', 'n1', 'earnings_beat', 'Earnings beat', 'earnings',
+            'fixture', '2025-04-10T12:00:00+00:00', '2025-04-10T12:00:00+00:00',
+            'abc', 'rules', 0.1, 1, 0.9, 1
+        )
+        """
+    )
+    store.conn.execute(
+        """
+        INSERT INTO strategy_registry (
+            strategy_version, recorded_at, role, parent_version, config_hash,
+            event_rules_hash, change_json
+        ) VALUES ('v0', '2025-04-10T13:00:00+00:00', 'official', NULL, 'hash', 'rules', '{}')
+        """
+    )
+    store.conn.execute(
+        """
+        INSERT INTO experiments (
+            experiment_id, created_at, baseline_version, candidate_version, run_mode,
+            baseline_run_ids, change_json, dev_end, validation_start, validation_end,
+            config_hash, event_rules_hash
+        ) VALUES (
+            'exp-1', '2025-04-10T13:00:00+00:00', 'v0', 'v1', 'replay',
+            '[]', '{}', '2025-04-01', '2025-04-02', '2025-04-03', 'hash', 'rules'
+        )
+        """
+    )
+    store.conn.execute(
+        """
+        INSERT INTO evolution_decisions (
+            decision_id, experiment_id, recorded_at, as_of, action, terminal,
+            shadow_run_ids, evidence_json
+        ) VALUES (
+            'dec-1', 'exp-1', '2025-04-10T13:00:00+00:00', '2025-04-10T13:00:00+00:00',
+            'KEEP_CURRENT', 1, '[]', '{}'
+        )
         """
     )
     store.conn.commit()

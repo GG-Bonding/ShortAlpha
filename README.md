@@ -60,7 +60,7 @@ shortalpha explain NVDA --date 2024-06-20
 shortalpha replay --from 2024-06-18 --to 2024-06-20
 ```
 
-回放只读取 `available_at <= 当天 09:00` 的数据。同一配置和同一输入跑两次，快照哈希相同，`run_id` 不同。周末和 NYSE 假日不会产生信号。当前命令行还没有公司行动数据源，运行备注会写 `corporate_actions=not_loaded`，不会假装已经核对过拆分。
+回放只读取 `available_at <= 当天 09:00` 的数据。同一配置和同一输入跑两次，快照哈希相同，`run_id` 不同。周末和 NYSE 假日不会产生信号。Fixture 行情的运行备注仍是 `corporate_actions=not_loaded`。Alpaca 行情会读取拆分比例，但只使用信号日当天或更早的 ex_date，并注明没有公告时间。新闻如果 `updated_at` 晚于 `created_at`，当前正文的可见时间是 `updated_at`。
 
 ```bash
 shortalpha scan --date 2024-06-20

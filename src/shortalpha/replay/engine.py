@@ -11,7 +11,7 @@ from shortalpha.calendar import NYSECalendar
 from shortalpha.config import AppConfig, config_hash
 from shortalpha.domain import Split
 from shortalpha.errors import DataUnavailableError
-from shortalpha.event_rules import EventRules, load_event_rules
+from shortalpha.event_rules import EventRules, event_rules_content_hash, load_event_rules
 from shortalpha.factors.events import compute_event
 from shortalpha.factors.momentum import compute_momentum
 from shortalpha.factors.price_action import compute_price_action
@@ -66,7 +66,9 @@ def replay(
 ) -> tuple[SessionResult, ...]:
     if start > end:
         raise ValueError("--from must be on or before --to")
-    rules = load_event_rules(_resolve(root, cfg.event.rules))
+    rules_path = _resolve(root, cfg.event.rules)
+    rules = load_event_rules(rules_path)
+    rules_hash = event_rules_content_hash(rules_path)
     sector_map = load_sector_map(_resolve(root, cfg.relative_strength.sector_map))
     results: list[SessionResult] = []
     day = start
@@ -87,6 +89,8 @@ def replay(
                     splits_for=splits_for,
                     notes=notes,
                     output_dir=output_dir,
+                    run_mode="replay",
+                    event_rules_hash=rules_hash,
                 )
             )
         day = date.fromordinal(day.toordinal() + 1)
@@ -108,6 +112,9 @@ def run_session(
     splits_for: SplitsFn,
     notes: str,
     output_dir: Path | None,
+    run_mode: str,
+    event_rules_hash: str,
+    strategy_version: str | None = None,
 ) -> SessionResult:
     started = time.perf_counter()
     as_of = calendar.signal_time(session, cfg.signal.time, _zone(cfg.signal.timezone))
@@ -192,6 +199,10 @@ def run_session(
                     event=cfg.event,
                     rules=rules,
                     weight=cfg.weights.event,
+                    rules_sha256=event_rules_hash,
+                    bars=bars,
+                    session=session,
+                    splits=stock_splits,
                 ),
                 compute_relative_strength(
                     member.symbol,
@@ -241,7 +252,7 @@ def run_session(
         signal_time=as_of,
         timezone=cfg.signal.timezone,
         weights=cfg.weights,
-        config_hash=config_hash(cfg),
+        config_hash=config_hash(cfg, event_rules_hash),
         code_version=__version__,
         created_at=datetime.now(UTC),
         universe_size=len(loaded.members),
@@ -251,6 +262,9 @@ def run_session(
         universe_list_as_of=loaded.list_as_of,
         point_in_time_membership=loaded.point_in_time_membership,
         notes=run_notes,
+        strategy_version=strategy_version or cfg.strategy.version,
+        run_mode=run_mode,
+        event_rules_hash=event_rules_hash,
         output_dir=output_dir,
         duration_ms=int((time.perf_counter() - started) * 1000),
     )

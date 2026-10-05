@@ -15,6 +15,7 @@ from shortalpha.event_rules import load_event_rules
 
 _TOP_LEVEL = {
     "signal",
+    "strategy",
     "universe",
     "ranking",
     "weights",
@@ -43,6 +44,11 @@ _WEIGHT_TOLERANCE = 1e-9
 class SignalConfig:
     timezone: str
     time: time
+
+
+@dataclass(frozen=True)
+class StrategyConfig:
+    version: str
 
 
 @dataclass(frozen=True)
@@ -201,6 +207,10 @@ class EvaluationConfig:
     horizons: tuple[int, ...]
     min_bucket_count: int
     buckets: tuple[tuple[float, float], ...]
+    round_trip_cost: float
+    primary_horizon: int
+    block_sessions: int
+    min_proposal_count: int
 
 
 @dataclass(frozen=True)
@@ -219,6 +229,7 @@ class FixtureConfig:
 @dataclass(frozen=True)
 class AppConfig:
     signal: SignalConfig
+    strategy: StrategyConfig
     universe: UniverseConfig
     ranking: RankingConfig
     weights: WeightsConfig
@@ -254,13 +265,18 @@ def load_config(path: Path, root: Path | None = None) -> AppConfig:
     return cfg
 
 
-def config_hash(cfg: AppConfig) -> str:
-    payload = json.dumps(_jsonable(asdict(cfg)), sort_keys=True, separators=(",", ":"))
+def config_hash(cfg: AppConfig, event_rules_sha256: str) -> str:
+    if not event_rules_sha256:
+        raise ValueError("event_rules_sha256 is required")
+    body = _jsonable(asdict(cfg))
+    body["event_rules_sha256"] = event_rules_sha256
+    payload = json.dumps(body, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
 def _build(data: dict[str, Any], root: Path) -> AppConfig:
     signal = _section(data, "signal", {"timezone", "time"})
+    strategy = _strategy(_section(data, "strategy", {"version"}))
     timezone_name = _as_str(signal, "timezone")
     try:
         ZoneInfo(timezone_name)
@@ -376,7 +392,19 @@ def _build(data: dict[str, Any], root: Path) -> AppConfig:
     alpaca = _alpaca(_section(data, "alpaca", {"feed", "adjustment", "data_base_url"}))
     calendar = _calendar(_section(data, "calendar", {"extra_holidays", "extra_early_closes"}))
     evaluation = _evaluation(
-        _section(data, "evaluation", {"horizons", "min_bucket_count", "buckets"})
+        _section(
+            data,
+            "evaluation",
+            {
+                "horizons",
+                "min_bucket_count",
+                "buckets",
+                "round_trip_cost",
+                "primary_horizon",
+                "block_sessions",
+                "min_proposal_count",
+            },
+        )
     )
     logging_cfg = _section(data, "logging", {"level"})
     level = _as_str(logging_cfg, "level")
@@ -388,6 +416,7 @@ def _build(data: dict[str, Any], root: Path) -> AppConfig:
     )
     return AppConfig(
         signal=SignalConfig(timezone=timezone_name, time=_as_clock(signal, "time")),
+        strategy=strategy,
         universe=universe,
         ranking=RankingConfig(
             top_n=_positive_int(ranking, "top_n"),
@@ -414,6 +443,13 @@ def _build(data: dict[str, Any], root: Path) -> AppConfig:
         logging=LoggingConfig(level=level),
         fixtures=fixtures,
     )
+
+
+def _strategy(data: dict[str, Any]) -> StrategyConfig:
+    version = _as_str(data, "version")
+    if not version.replace(".", "").replace("_", "").replace("-", "").isalnum():
+        raise ConfigError("strategy version must be letters, numbers, dot, underscore, or dash")
+    return StrategyConfig(version=version)
 
 
 def _momentum(data: dict[str, Any]) -> MomentumConfig:
@@ -600,10 +636,23 @@ def _evaluation(data: dict[str, Any]) -> EvaluationConfig:
         if low >= high:
             raise ConfigError("evaluation bucket low must be below high")
         buckets.append((low, high))
+    cost = _as_number(data, "round_trip_cost")
+    if cost < 0:
+        raise ConfigError("evaluation round_trip_cost must be >= 0")
+    primary = _positive_int(data, "primary_horizon")
+    if primary not in _FIXED_HORIZONS:
+        raise ConfigError("evaluation primary_horizon must be 1, 2, 3, or 5")
+    block_sessions = _positive_int(data, "block_sessions")
+    if block_sessions < primary:
+        raise ConfigError("evaluation block_sessions must cover the primary horizon")
     return EvaluationConfig(
         horizons=_FIXED_HORIZONS,
         min_bucket_count=_positive_int(data, "min_bucket_count"),
         buckets=tuple(buckets),
+        round_trip_cost=cost,
+        primary_horizon=primary,
+        block_sessions=block_sessions,
+        min_proposal_count=_positive_int(data, "min_proposal_count"),
     )
 
 

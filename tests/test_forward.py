@@ -205,6 +205,9 @@ def test_forward_rows_round_trip(tmp_path, repo_root) -> None:
                 universe_list_as_of=None,
                 point_in_time_membership=False,
                 notes="",
+                strategy_version="v0",
+                run_mode="replay",
+                event_rules_hash="rules",
             )
         )
         store.insert_forward_return(
@@ -221,6 +224,7 @@ def test_forward_rows_round_trip(tmp_path, repo_root) -> None:
             mae=-0.02,
             mfe=0.03,
             code_version="0.1.0",
+            label_available_at=created,
         )
         row = store.conn.execute(
             "SELECT excess_return, mae FROM forward_returns WHERE run_id = 'run-a'"

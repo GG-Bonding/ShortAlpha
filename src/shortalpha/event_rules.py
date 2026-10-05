@@ -1,5 +1,6 @@
 """Keyword event table. The numbers are a prior, not a fit to later returns."""
 
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,10 @@ class EventRules:
 
 
 _TYPE_KEYS = {"id", "family", "direction", "importance", "confidence", "label", "patterns"}
+
+
+def event_rules_content_hash(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def load_event_rules(path: Path) -> EventRules:

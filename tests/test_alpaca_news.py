@@ -20,14 +20,16 @@ def _provider(handler, *, secret: str = "secret") -> AlpacaNewsProvider:
     )
 
 
-def _article(stamp: str, headline: str, article_id: int) -> dict[str, object]:
+def _article(
+    stamp: str, headline: str, article_id: int, *, updated_at: str | None = None
+) -> dict[str, object]:
     return {
         "id": article_id,
         "headline": headline,
         "summary": "",
         "source": "benzinga",
         "created_at": stamp,
-        "updated_at": "2026-01-01T00:00:00Z",
+        "updated_at": stamp if updated_at is None else updated_at,
         "url": "https://example.test/news",
         "symbols": ["NVDA"],
     }
@@ -54,6 +56,27 @@ def test_created_at_is_available_at_and_a_later_article_is_dropped() -> None:
     assert [item.id for item in items] == ["1"]
     assert items[0].available_at == datetime(2025, 4, 10, 8, 30, tzinfo=NY)
     assert items[0].published_at == items[0].available_at
+
+
+def test_a_revised_article_is_not_visible_before_updated_at() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "news": [
+                    _article(
+                        "2025-04-10T12:30:00Z",
+                        "NVDA earnings beat",
+                        1,
+                        updated_at="2025-04-10T14:00:00Z",
+                    )
+                ],
+                "next_page_token": None,
+            },
+        )
+
+    items = _provider(handler).news("NVDA", AS_OF - timedelta(hours=72), AS_OF, AS_OF)
+    assert items == []
 
 
 def test_an_empty_payload_is_an_empty_list() -> None:

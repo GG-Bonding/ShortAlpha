@@ -5,6 +5,7 @@ import pytest
 
 from shortalpha.config import config_hash, load_config
 from shortalpha.errors import ConfigError
+from shortalpha.event_rules import event_rules_content_hash
 
 
 def test_default_config_loads_signal_time_as_clock(repo_root: Path) -> None:
@@ -28,11 +29,13 @@ def test_default_config_loads_signal_time_as_clock(repo_root: Path) -> None:
     assert "API_KEY" not in (repo_root / "config" / "default.yaml").read_text()
 
 
-def test_config_hash_is_stable(repo_root: Path) -> None:
+def test_config_hash_is_stable_and_includes_event_rule_bytes(repo_root: Path) -> None:
     first = load_config(repo_root / "config" / "default.yaml", root=repo_root)
     second = load_config(repo_root / "config" / "default.yaml", root=repo_root)
-    assert config_hash(first) == config_hash(second)
-    assert len(config_hash(first)) == 64
+    digest = event_rules_content_hash(repo_root / first.event.rules)
+    assert config_hash(first, digest) == config_hash(second, digest)
+    assert len(config_hash(first, digest)) == 64
+    assert config_hash(first, "a" * 64) != config_hash(first, "b" * 64)
 
 
 def _write_variant(repo_root: Path, tmp_path: Path, old: str, new: str) -> Path:

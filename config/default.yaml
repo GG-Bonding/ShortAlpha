@@ -6,6 +6,9 @@ signal:
   timezone: America/New_York
   time: "09:00"
 
+strategy:
+  version: v0
+
 universe:
   sources:
     - sp500
@@ -119,6 +122,10 @@ calendar:
 evaluation:
   horizons: [1, 2, 3, 5]
   min_bucket_count: 5
+  round_trip_cost: 0.001
+  primary_horizon: 3
+  block_sessions: 3
+  min_proposal_count: 20
   buckets:
     - [80, 85]
     - [85, 90]

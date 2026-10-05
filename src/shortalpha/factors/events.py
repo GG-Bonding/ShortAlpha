@@ -1,16 +1,22 @@
 """Rule-based event score. Articles after signal_time are ignored."""
 
+import hashlib
 import math
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 from shortalpha.config import EventConfig
-from shortalpha.domain import EventRisk, FactorResult, NewsItem
+from shortalpha.domain import ClassifiedEvent, DailyBar, EventRisk, FactorResult, NewsItem, Split
 from shortalpha.event_rules import EventRules, EventTypeRule
+from shortalpha.factors.adjust import adjusted_close
 from shortalpha.factors.scale import clamp, scale_to_weight
 
 _TOKENS = re.compile(r"[a-z0-9]+")
 _EMPTY_REASON = "no qualifying events"
+
+
+def content_sha256(headline: str, summary: str) -> str:
+    return hashlib.sha256(f"{headline}\n{summary}".encode()).hexdigest()
 
 
 def compute_event(
@@ -21,6 +27,10 @@ def compute_event(
     event: EventConfig,
     rules: EventRules,
     weight: float,
+    rules_sha256: str = "",
+    bars: list[DailyBar] | None = None,
+    session: date | None = None,
+    splits: tuple[Split, ...] = (),
 ) -> FactorResult:
     if as_of.tzinfo is None or as_of.utcoffset() is None:
         raise ValueError("as_of must be timezone-aware")
@@ -43,12 +53,31 @@ def compute_event(
             ),
         )
     contributions: list[tuple[datetime, str, float, float, float]] = []
+    classified: list[ClassifiedEvent] = []
     severe = False
     for item, rule in kept:
         age_hours = (as_of - item.published_at).total_seconds() / 3600
         freshness = math.exp(-event.freshness_lambda * age_hours)
         signed = rule.direction * rule.importance * freshness * rule.confidence
         contributions.append((item.published_at, rule.label, signed, rule.direction, freshness))
+        classified.append(
+            ClassifiedEvent(
+                news_id=item.id,
+                rule_id=rule.id,
+                label=rule.label,
+                family=rule.family,
+                source=item.source,
+                published_at=item.published_at,
+                available_at=item.available_at,
+                content_sha256=content_sha256(item.headline, item.summary),
+                rules_sha256=rules_sha256,
+                signed=signed,
+                direction=rule.direction,
+                importance=rule.importance,
+                freshness=freshness,
+                reaction=_reaction(bars, item.available_at, session, as_of, splits, symbol),
+            )
+        )
         if (
             rule.direction < 0
             and rule.importance >= event.severe_importance
@@ -76,6 +105,7 @@ def compute_event(
             ("raw_sum", f"{raw_sum:.10f}"),
             ("kept", str(len(kept))),
         ),
+        events=tuple(classified),
     )
 
 
@@ -151,6 +181,34 @@ def _jaccard(left: set[str], right: set[str]) -> float:
 
 def _hours(left: datetime, right: datetime) -> float:
     return abs((left - right).total_seconds()) / 3600
+
+
+def _reaction(
+    bars: list[DailyBar] | None,
+    news_available: datetime,
+    session: date | None,
+    as_of: datetime,
+    splits: tuple[Split, ...],
+    symbol: str,
+) -> float | None:
+    if bars is None or session is None:
+        return None
+    completed = [
+        bar
+        for bar in bars
+        if bar.symbol == symbol and bar.available_at <= as_of and bar.session_date < session
+    ]
+    if not completed:
+        return None
+    completed.sort(key=lambda bar: bar.session_date)
+    prior = [bar for bar in completed if bar.available_at <= news_available]
+    if not prior:
+        return None
+    start = adjusted_close(prior[-1].close, prior[-1].session_date, session, splits, symbol)
+    end = adjusted_close(completed[-1].close, completed[-1].session_date, session, splits, symbol)
+    if start <= 0:
+        return None
+    return end / start - 1
 
 
 def _unique(values) -> tuple[str, ...]:
