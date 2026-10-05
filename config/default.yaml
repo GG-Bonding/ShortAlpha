@@ -126,6 +126,10 @@ evaluation:
   primary_horizon: 3
   block_sessions: 3
   min_proposal_count: 20
+  # Fixed before a candidate is scored. A short sample waits; it does not promote.
+  min_mature_dates: 6
+  min_effective_trades: 6
+  min_complete_blocks: 2
   buckets:
     - [80, 85]
     - [85, 90]

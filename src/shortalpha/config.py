@@ -211,6 +211,9 @@ class EvaluationConfig:
     primary_horizon: int
     block_sessions: int
     min_proposal_count: int
+    min_mature_dates: int
+    min_effective_trades: int
+    min_complete_blocks: int
 
 
 @dataclass(frozen=True)
@@ -403,6 +406,9 @@ def _build(data: dict[str, Any], root: Path) -> AppConfig:
                 "primary_horizon",
                 "block_sessions",
                 "min_proposal_count",
+                "min_mature_dates",
+                "min_effective_trades",
+                "min_complete_blocks",
             },
         )
     )
@@ -645,6 +651,12 @@ def _evaluation(data: dict[str, Any]) -> EvaluationConfig:
     block_sessions = _positive_int(data, "block_sessions")
     if block_sessions < primary:
         raise ConfigError("evaluation block_sessions must cover the primary horizon")
+    min_complete_blocks = _positive_int(data, "min_complete_blocks")
+    if min_complete_blocks < 2:
+        raise ConfigError("evaluation min_complete_blocks must be at least 2")
+    min_mature_dates = _positive_int(data, "min_mature_dates")
+    if min_mature_dates < block_sessions * min_complete_blocks:
+        raise ConfigError("evaluation min_mature_dates must cover every required block")
     return EvaluationConfig(
         horizons=_FIXED_HORIZONS,
         min_bucket_count=_positive_int(data, "min_bucket_count"),
@@ -653,6 +665,9 @@ def _evaluation(data: dict[str, Any]) -> EvaluationConfig:
         primary_horizon=primary,
         block_sessions=block_sessions,
         min_proposal_count=_positive_int(data, "min_proposal_count"),
+        min_mature_dates=min_mature_dates,
+        min_effective_trades=_positive_int(data, "min_effective_trades"),
+        min_complete_blocks=min_complete_blocks,
     )
 
 

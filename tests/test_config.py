@@ -25,6 +25,9 @@ def test_default_config_loads_signal_time_as_clock(repo_root: Path) -> None:
     assert cfg.event.freshness_lambda == 0.05
     assert cfg.price_action.gap_penalty_start == 0.03
     assert cfg.alpaca.adjustment == "raw"
+    assert cfg.evaluation.min_mature_dates == 6
+    assert cfg.evaluation.min_effective_trades == 6
+    assert cfg.evaluation.min_complete_blocks == 2
     assert "SECRET" not in (repo_root / "config" / "default.yaml").read_text().upper()
     assert "API_KEY" not in (repo_root / "config" / "default.yaml").read_text()
 
@@ -61,6 +64,12 @@ def test_momentum_components_must_sum_to_one(repo_root: Path, tmp_path: Path) ->
 def test_price_action_parts_must_sum_to_weight(repo_root: Path, tmp_path: Path) -> None:
     path = _write_variant(repo_root, tmp_path, "break_bonus: 2.5", "break_bonus: 3")
     with pytest.raises(ConfigError, match="price_action"):
+        load_config(path, root=repo_root)
+
+
+def test_promotion_sample_floors_are_fixed(repo_root: Path, tmp_path: Path) -> None:
+    path = _write_variant(repo_root, tmp_path, "min_complete_blocks: 2", "min_complete_blocks: 1")
+    with pytest.raises(ConfigError, match="min_complete_blocks"):
         load_config(path, root=repo_root)
 
 

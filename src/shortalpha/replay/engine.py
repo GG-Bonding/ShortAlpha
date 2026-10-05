@@ -115,6 +115,7 @@ def run_session(
     run_mode: str,
     event_rules_hash: str,
     strategy_version: str | None = None,
+    experiment_id: str = "",
 ) -> SessionResult:
     started = time.perf_counter()
     as_of = calendar.signal_time(session, cfg.signal.time, _zone(cfg.signal.timezone))
@@ -265,6 +266,7 @@ def run_session(
         strategy_version=strategy_version or cfg.strategy.version,
         run_mode=run_mode,
         event_rules_hash=event_rules_hash,
+        experiment_id=experiment_id,
         output_dir=output_dir,
         duration_ms=int((time.perf_counter() - started) * 1000),
     )

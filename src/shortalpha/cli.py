@@ -15,7 +15,11 @@ from shortalpha.errors import ConfigError, DataUnavailableError, ShortAlphaError
 from shortalpha.evaluation.fill import fill_forward_returns, runs_by_ids, select_runs
 from shortalpha.evaluation.report import render_evaluation
 from shortalpha.event_rules import event_rules_content_hash, load_event_rules
-from shortalpha.evolution.change import event_scale_from_json, scale_event_contribution
+from shortalpha.evolution.active import (
+    resolve_shadow,
+    resolve_strategy,
+    signal_is_in_forward_window,
+)
 from shortalpha.evolution.loop import decide_experiment, open_experiment, rollback_official
 from shortalpha.factors.relative_strength import load_sector_map
 from shortalpha.logging_utils import log_failure
@@ -50,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     scan.add_argument("--database", default=None)
     scan.add_argument("--run-mode", default="live", choices=("live", "replay", "shadow"))
     scan.add_argument("--strategy-version", default=None)
+    scan.add_argument("--experiment", default=None)
     explain = sub.add_parser("explain")
     _add_config_arg(explain)
     explain.add_argument("symbol")
@@ -147,17 +152,32 @@ def _scan(args: argparse.Namespace) -> int:
     universe = build_universe_provider(cfg, root)
     splits_for, split_note, split_source = _split_source(cfg)
     rules_path = root / cfg.event.rules
-    rules_hash = event_rules_content_hash(rules_path)
+    file_hash = event_rules_content_hash(rules_path)
+    file_rules = load_event_rules(rules_path)
+    experiment_id = ""
     try:
-        rules = load_event_rules(rules_path)
-        version = args.strategy_version or cfg.strategy.version
-        if version != cfg.strategy.version:
-            recorded = store.latest_registry(version)
-            if recorded is None:
-                print(f"error: unknown strategy version {version}", file=sys.stderr)
+        if args.run_mode == "shadow":
+            if not args.experiment:
+                print("error: shadow scan requires --experiment", file=sys.stderr)
                 return 1
-            rules = scale_event_contribution(
-                rules, event_scale_from_json(str(recorded["change_json"]))
+            experiment = store.experiment(args.experiment)
+            if experiment is None:
+                print(f"error: unknown experiment {args.experiment}", file=sys.stderr)
+                return 1
+            signal_at = calendar.signal_time(day, cfg.signal.time, zone)
+            if not signal_is_in_forward_window(experiment["shadow_starts_at"], signal_at):
+                print(
+                    "error: signal is before this experiment's forward window",
+                    file=sys.stderr,
+                )
+                return 1
+            version, rules, rules_hash = resolve_shadow(
+                store, cfg, file_rules, args.experiment, file_hash=file_hash
+            )
+            experiment_id = args.experiment
+        else:
+            version, rules, rules_hash = resolve_strategy(
+                store, cfg, file_rules, requested=args.strategy_version, file_hash=file_hash
             )
         sector_map = load_sector_map(root / cfg.relative_strength.sector_map)
         result = run_session(
@@ -177,6 +197,7 @@ def _scan(args: argparse.Namespace) -> int:
             run_mode=args.run_mode,
             event_rules_hash=rules_hash,
             strategy_version=version,
+            experiment_id=experiment_id,
         )
         loaded = store.get_snapshot(result.run_id)
         if loaded is None:
@@ -184,6 +205,9 @@ def _scan(args: argparse.Namespace) -> int:
             return 1
         print(format_scan(json.loads(loaded[0])))
         return 0
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     except DataUnavailableError as exc:
         log_failure(
             symbol=exc.symbol,
@@ -213,6 +237,8 @@ def _evaluate(args: argparse.Namespace) -> int:
     store = Store(_database_path(root, cfg, args.database), root / "migrations")
     market = build_market_provider(cfg, root, calendar)
     splits_for, _split_note, split_source = _split_source(cfg)
+    file_rules = load_event_rules(root / cfg.event.rules)
+    file_hash = event_rules_content_hash(root / cfg.event.rules)
     try:
         if args.experiment:
             experiment = store.experiment(args.experiment)
@@ -223,7 +249,13 @@ def _evaluate(args: argparse.Namespace) -> int:
             mode = str(experiment["run_mode"])
             chosen = runs_by_ids(store, tuple(json.loads(experiment["baseline_run_ids"])))
         else:
-            version = args.strategy_version or store.official_version(cfg.strategy.version)
+            try:
+                version, _rules, _rules_hash = resolve_strategy(
+                    store, cfg, file_rules, requested=args.strategy_version, file_hash=file_hash
+                )
+            except ValueError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
             mode = args.run_mode
             chosen = select_runs(store, strategy_version=version, run_mode=mode)
         payloads: list[tuple[dict[str, object], list[object]]] = []
@@ -369,12 +401,19 @@ def _evolve(args: argparse.Namespace) -> int:
                 )
             )
             return 0
-        rules = load_event_rules(rules_path)
+        file_rules = load_event_rules(rules_path)
+        try:
+            version, rules, active_hash = resolve_strategy(
+                store, cfg, file_rules, requested=None, file_hash=rules_hash
+            )
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
         calendar = calendar_from_config(cfg)
         market = build_market_provider(cfg, root, calendar)
         splits_for, _note, split_source = _split_source(cfg)
         try:
-            runs = select_runs(store, strategy_version=cfg.strategy.version, run_mode=args.run_mode)
+            runs = select_runs(store, strategy_version=version, run_mode=args.run_mode)
             documents: dict[str, dict[str, object]] = {}
             forwards: dict[str, list[object]] = {}
             for run in runs:
@@ -408,8 +447,8 @@ def _evolve(args: argparse.Namespace) -> int:
                     validation_start=date.fromisoformat(args.validation_start),
                     validation_end=date.fromisoformat(args.validation_end),
                     run_mode=args.run_mode,
-                    config_digest=config_hash(cfg, rules_hash),
-                    event_rules_hash=rules_hash,
+                    config_digest=config_hash(cfg, active_hash),
+                    event_rules_hash=active_hash,
                     calendar=calendar,
                 )
             )

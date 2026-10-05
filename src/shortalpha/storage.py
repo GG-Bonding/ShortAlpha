@@ -51,8 +51,8 @@ class Store:
                 created_at, universe_size, eligible_size, scored_size, candidate_size,
                 duration_ms, provider_errors, missing_data_count, market_regime, no_trade,
                 status, universe_list_as_of, point_in_time_membership, notes,
-                strategy_version, run_mode, event_rules_hash
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                strategy_version, run_mode, event_rules_hash, experiment_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             _run_params(run),
         )
@@ -90,6 +90,7 @@ class Store:
             strategy_version=row["strategy_version"] or "",
             run_mode=row["run_mode"] or "",
             event_rules_hash=row["event_rules_hash"] or "",
+            experiment_id=row["experiment_id"] or "",
         )
 
     def insert_snapshot(
@@ -125,8 +126,8 @@ class Store:
                     created_at, universe_size, eligible_size, scored_size, candidate_size,
                     duration_ms, provider_errors, missing_data_count, market_regime, no_trade,
                     status, universe_list_as_of, point_in_time_membership, notes,
-                    strategy_version, run_mode, event_rules_hash
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    strategy_version, run_mode, event_rules_hash, experiment_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 _run_params(run),
             )
@@ -272,6 +273,7 @@ class Store:
         config_hash: str,
         event_rules_hash: str,
         change_json: str,
+        rules_json: str,
     ) -> None:
         ensure_aware("recorded_at", recorded_at)
         if role not in {"official", "candidate", "retired"}:
@@ -280,8 +282,8 @@ class Store:
             """
             INSERT INTO strategy_registry (
                 strategy_version, recorded_at, role, parent_version, config_hash,
-                event_rules_hash, change_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                event_rules_hash, change_json, rules_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 strategy_version,
@@ -291,6 +293,7 @@ class Store:
                 config_hash,
                 event_rules_hash,
                 change_json,
+                rules_json,
             ),
         )
 
@@ -333,15 +336,22 @@ class Store:
         validation_end: date,
         config_hash: str,
         event_rules_hash: str,
+        shadow_starts_at: datetime,
+        training_cutoff_at: datetime,
+        baseline_rules_json: str,
+        promotion_json: str,
     ) -> None:
         ensure_aware("created_at", created_at)
+        ensure_aware("shadow_starts_at", shadow_starts_at)
+        ensure_aware("training_cutoff_at", training_cutoff_at)
         self._execute(
             """
             INSERT INTO experiments (
                 experiment_id, created_at, baseline_version, candidate_version, run_mode,
                 baseline_run_ids, change_json, dev_end, validation_start, validation_end,
-                config_hash, event_rules_hash
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                config_hash, event_rules_hash, shadow_starts_at, training_cutoff_at,
+                baseline_rules_json, promotion_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 experiment_id,
@@ -356,6 +366,10 @@ class Store:
                 validation_end.isoformat(),
                 config_hash,
                 event_rules_hash,
+                shadow_starts_at.isoformat(),
+                training_cutoff_at.isoformat(),
+                baseline_rules_json,
+                promotion_json,
             ),
         )
 
@@ -484,4 +498,5 @@ def _run_params(run: SignalRun) -> tuple[object, ...]:
         run.strategy_version,
         run.run_mode,
         run.event_rules_hash,
+        run.experiment_id,
     )

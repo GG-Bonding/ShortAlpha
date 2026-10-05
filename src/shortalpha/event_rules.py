@@ -1,6 +1,7 @@
 """Keyword event table. The numbers are a prior, not a fit to later returns."""
 
 import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,42 @@ _TYPE_KEYS = {"id", "family", "direction", "importance", "confidence", "label", 
 
 def event_rules_content_hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def rules_to_json(rules: EventRules) -> str:
+    payload = {
+        "types": [
+            {
+                "confidence": rule.confidence,
+                "direction": rule.direction,
+                "family": rule.family,
+                "id": rule.id,
+                "importance": rule.importance,
+                "label": rule.label,
+                "patterns": list(rule.patterns),
+            }
+            for rule in rules.types
+        ]
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+def rules_from_json(text: str) -> EventRules:
+    try:
+        loaded = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError("frozen event rules are not json") from exc
+    if not isinstance(loaded, dict) or set(loaded) != {"types"}:
+        raise ValueError("frozen event rules must contain only types")
+    raw_types = loaded["types"]
+    if not isinstance(raw_types, list) or not raw_types:
+        raise ValueError("frozen event rules need at least one type")
+    types: list[EventTypeRule] = []
+    seen: set[str] = set()
+    origin = Path("strategy_registry")
+    for raw in raw_types:
+        types.append(_type_rule(raw, origin, seen))
+    return EventRules(types=tuple(types))
 
 
 def load_event_rules(path: Path) -> EventRules:

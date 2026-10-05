@@ -87,6 +87,7 @@ def save_signal(
     strategy_version: str,
     run_mode: str,
     event_rules_hash: str,
+    experiment_id: str = "",
     output_dir: Path | None = None,
     run_id: str | None = None,
     duration_ms: int | None = None,
@@ -125,6 +126,7 @@ def save_signal(
         strategy_version=strategy_version,
         run_mode=run_mode,
         event_rules_hash=event_rules_hash,
+        experiment_id=experiment_id,
     )
     store.insert_signal(run, text, digest, _factor_rows(book))
     if output_dir is not None:

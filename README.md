@@ -67,6 +67,6 @@ shortalpha scan --date 2024-06-20
 shortalpha evaluate --as-of 2024-06-28
 ```
 
-`scan` 就是回放中的一个交易日，并打印候选、分数、原因和风险。默认配置用的是仓库里的 fixture。fixture 没有完整行情时，扫描会报缺失数据，而不是编出候选。接 Alpaca 时把 `providers` 改成 `alpaca`，并设置 `APCA_API_KEY_ID` 和 `APCA_API_SECRET_KEY`。免费 IEX 行情不会被当成合并盘前成交。
+`scan` 就是回放中的一个交易日，并打印候选、分数、原因和风险。没有指定版本时，它使用登记簿里的正式版本和该版本冻结的规则；还没有正式记录时用配置里的 `v0`。默认配置用的是仓库里的 fixture。fixture 没有完整行情时，扫描会报缺失数据，而不是编出候选。接 Alpaca 时把 `providers` 改成 `alpaca`，并设置 `APCA_API_KEY_ID` 和 `APCA_API_SECRET_KEY`。免费 IEX 行情不会被当成合并盘前成交。
 
 `evaluate` 只用每个信号日最新的一次运行，统计全部打分股票，不只看前三名。某个持有期的行情还没到，该期就不进入命中率。高分股票的平均超额没有高于低分时，输出 `HIGH SCORE DOES NOT BEAT LOW SCORE`。分数桶的平均超额没有严格上升时，输出 `NO MONOTONIC RELATIONSHIP`。样本不够时输出 `INSUFFICIENT SAMPLE`。没有亏损时盈亏比是 `UNDEFINED`。

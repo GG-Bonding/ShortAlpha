@@ -230,6 +230,7 @@ class SignalRun:
     strategy_version: str = ""
     run_mode: str = ""
     event_rules_hash: str = ""
+    experiment_id: str = ""
 
     def __post_init__(self) -> None:
         if not self.run_id:
