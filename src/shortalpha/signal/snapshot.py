@@ -146,6 +146,8 @@ def _symbol_payload(
         "rank": rank,
         "signal": row.label.value,
         "symbol": row.symbol,
+        "thesis": row.thesis,
+        "thesis_veto": row.thesis_veto,
         "total_score": _round(row.total_score),
     }
 

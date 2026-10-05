@@ -180,6 +180,106 @@ def test_total_is_the_sum_of_the_five_scores() -> None:
     ]
 
 
+def _named(
+    symbol: str,
+    scores: dict[str, float],
+    *,
+    raw: dict[str, float] | None = None,
+    reasons: dict[str, tuple[str, ...]] | None = None,
+    details: dict[str, tuple[tuple[str, str], ...]] | None = None,
+) -> SymbolFactors:
+    factors = []
+    for name, score in scores.items():
+        factor_details = (("event_risk", "NONE"),) if name == "event" else ()
+        if details is not None and name in details:
+            factor_details = details[name]
+        factors.append(
+            FactorResult(
+                name=name,
+                raw_value=(raw or {}).get(name, score),
+                normalized_value=None,
+                score=score,
+                available=True,
+                reasons=(reasons or {}).get(name, ()),
+                details=factor_details,
+            )
+        )
+    return SymbolFactors(symbol, tuple(factors))
+
+
+def test_no_classified_change_cannot_clear_the_long_threshold() -> None:
+    book = _book(
+        [
+            _named(
+                "AAA",
+                _five(90),
+                raw={"event": 0.0},
+                reasons={"event": ("no qualifying events",)},
+            )
+        ]
+    )
+    assert book.published == ()
+    assert book.ranked[0].label is SignalLabel.PASS
+    assert book.ranked[0].total_score == pytest.approx(90)
+    assert book.ranked[0].thesis_veto == "no positive classified change"
+    assert book.no_trade is True
+
+
+def test_price_and_extension_can_reject_a_positive_classification() -> None:
+    lagged = _named(
+        "BBB",
+        _five(90),
+        raw={"event": 0.4, "relative_strength": -0.01},
+        reasons={"event": ("Earnings beat",)},
+    )
+    extended = _named(
+        "CCC",
+        _five(90),
+        raw={"event": 0.4, "relative_strength": 0.02},
+        reasons={"event": ("Guidance raise",)},
+        details={
+            "event": (("event_risk", "NONE"),),
+            "momentum": (("overheated", "true"),),
+        },
+    )
+    gapped = _named(
+        "DDD",
+        _five(90),
+        raw={"event": 0.4, "relative_strength": 0.02},
+        reasons={"event": ("Contract win",)},
+        details={
+            "event": (("event_risk", "NONE"),),
+            "price_action": (("degraded", "false"), ("gap", "0.0900000000")),
+        },
+    )
+    book = _book([lagged, extended, gapped])
+    vetoes = {row.symbol: row.thesis_veto for row in book.ranked}
+    assert vetoes == {
+        "BBB": "price has not outperformed SPY and the sector",
+        "CCC": "five-day move already exceeds 25%",
+        "DDD": "premarket gap already exceeds 8%",
+    }
+    assert book.published == ()
+    assert all(row.label is SignalLabel.PASS for row in book.ranked)
+
+
+def test_below_baseline_volume_does_not_veto() -> None:
+    book = _book(
+        [
+            _named(
+                "AAA",
+                _five(85),
+                raw={"event": 0.3, "relative_strength": 0.02, "volume": 0.4},
+                reasons={"event": ("Earnings beat",)},
+            )
+        ]
+    )
+    assert book.published[0].symbol == "AAA"
+    assert book.published[0].thesis_veto is None
+    assert "Positioning is unknown" in book.published[0].thesis
+    assert "0.4x the baseline" in book.published[0].thesis
+
+
 def test_as_of_must_be_timezone_aware() -> None:
     with pytest.raises(ValueError, match="timezone-aware"):
         rank_symbols(

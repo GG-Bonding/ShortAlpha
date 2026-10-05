@@ -48,6 +48,9 @@ def _symbol_lines(row: dict[str, object]) -> list[str]:
         "Signal:",
         str(row["signal"]),
         "",
+        "Thesis:",
+        str(row.get("thesis") or "none"),
+        "",
     ]
     reasons: list[str] = []
     risks: list[str] = []
@@ -85,6 +88,9 @@ def format_explanation(snapshot: dict[str, object], symbol: str, *, run_id: str)
         f"Score: {_num(float(row['total_score']))}",
         f"Signal: {row['signal']}",
         f"Rank: {row['rank'] if row['rank'] is not None else 'excluded'}",
+        "",
+        "Thesis:",
+        str(row.get("thesis") or "none"),
         "",
     ]
     reasons: list[str] = []

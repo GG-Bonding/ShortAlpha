@@ -7,6 +7,7 @@ from shortalpha.config import HardFilterConfig, RankingConfig, RegimeConfig
 from shortalpha.domain import EventRisk, FactorResult, MarketRegime, SignalLabel, validate_symbol
 from shortalpha.errors import DataUnavailableError
 from shortalpha.scoring.regime import regime_blocks_trading
+from shortalpha.scoring.thesis import Thesis, assess_thesis
 
 _FACTORS = ("momentum", "volume", "event", "relative_strength", "price_action")
 
@@ -29,6 +30,8 @@ class ScoredSymbol:
     factors: tuple[FactorResult, ...]
     event_risk: EventRisk
     excluded_reason: str | None
+    thesis_veto: str | None
+    thesis: str
 
 
 @dataclass(frozen=True)
@@ -102,20 +105,25 @@ def _score(
     ordered = tuple(by_name[name] for name in _FACTORS)
     total = sum(float(factor.score) for factor in ordered)
     event_risk = _event_risk(by_name["event"], row.symbol, as_of)
+    thesis = assess_thesis(by_name)
     excluded = row.excluded_reason
     if hard_filters.block_severe_negative_event and event_risk is EventRisk.SEVERE_NEGATIVE:
         excluded = excluded or "severe negative event"
     return ScoredSymbol(
         symbol=row.symbol,
         total_score=total,
-        label=_label(total, ranking),
+        label=_decision_label(total, ranking, thesis),
         factors=ordered,
         event_risk=event_risk,
         excluded_reason=excluded,
+        thesis_veto=thesis.veto,
+        thesis=thesis.text,
     )
 
 
-def _label(total: float, ranking: RankingConfig) -> SignalLabel:
+def _decision_label(total: float, ranking: RankingConfig, thesis: Thesis) -> SignalLabel:
+    if not thesis.supported:
+        return SignalLabel.PASS
     if total >= ranking.long_threshold:
         return SignalLabel.LONG_CANDIDATE
     if total >= ranking.watch_threshold:

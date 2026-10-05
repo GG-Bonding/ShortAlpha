@@ -144,6 +144,8 @@ def test_scan_text_lists_reasons_risks_and_the_no_trade_flag() -> None:
     assert "#1 NVDA" in text
     assert "+ Earnings beat" in text
     assert "- Premarket gap +6.8%" in text
+    assert "Prior expectation is unknown" in text
+    assert "Positioning is unknown" in text
     assert text.endswith("NO_TRADE:\nfalse")
 
 
