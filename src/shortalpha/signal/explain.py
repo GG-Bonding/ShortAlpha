@@ -30,6 +30,11 @@ def format_scan(snapshot: dict[str, object]) -> str:
         lines.extend(_symbol_lines(row))
         lines.append("----------------------------")
         lines.append("")
+    missing = _missing_same_day(snapshot)
+    if missing:
+        lines.append("Same-day price missing:")
+        lines.append(str(missing))
+        lines.append("")
     lines.append("NO_TRADE:")
     lines.append(str(bool(snapshot["no_trade"])).lower())
     return "\n".join(lines)
@@ -47,6 +52,9 @@ def _symbol_lines(row: dict[str, object]) -> list[str]:
         "",
         "Signal:",
         str(row["signal"]),
+        "",
+        "Same-day price:",
+        _same_day(factors),
         "",
         "Thesis:",
         str(row.get("thesis") or "none"),
@@ -88,6 +96,7 @@ def format_explanation(snapshot: dict[str, object], symbol: str, *, run_id: str)
         f"Score: {_num(float(row['total_score']))}",
         f"Signal: {row['signal']}",
         f"Rank: {row['rank'] if row['rank'] is not None else 'excluded'}",
+        f"Same-day price: {_same_day(factors)}",
         "",
         "Thesis:",
         str(row.get("thesis") or "none"),
@@ -118,6 +127,29 @@ def format_explanation(snapshot: dict[str, object], symbol: str, *, run_id: str)
         lines.append("")
         lines.append(f"Excluded: {row['excluded_reason']}")
     return "\n".join(lines)
+
+
+def _same_day(factors: dict[str, object]) -> str:
+    price = factors.get("price_action")
+    if not isinstance(price, dict):
+        return "not recorded"
+    details = price.get("details")
+    if not isinstance(details, dict) or details.get("degraded") == "true" or "gap" not in details:
+        return "missing"
+    return f"premarket gap {float(str(details['gap'])) * 100:+.1f}%"
+
+
+def _missing_same_day(snapshot: dict[str, object]) -> int:
+    rows = snapshot.get("ranked")
+    if not isinstance(rows, list):
+        return 0
+    count = 0
+    for row in rows:
+        if isinstance(row, dict) and row.get("thesis_veto") == (
+            "same-day price confirmation is missing"
+        ):
+            count += 1
+    return count
 
 
 def _find(snapshot: dict[str, object], symbol: str) -> dict[str, object] | None:

@@ -120,6 +120,7 @@ class EventConfig:
     max_age_hours: float
     severe_importance: float
     severe_freshness: float
+    severe_hold_hours: float
     raw_low: float
     raw_high: float
     rules: str
@@ -332,6 +333,7 @@ def _build(data: dict[str, Any], root: Path) -> AppConfig:
                 "max_age_hours",
                 "severe_importance",
                 "severe_freshness",
+                "severe_hold_hours",
                 "raw_low",
                 "raw_high",
                 "rules",
@@ -504,6 +506,7 @@ def _event(data: dict[str, Any], root: Path) -> EventConfig:
         max_age_hours=_as_number(data, "max_age_hours"),
         severe_importance=_as_number(data, "severe_importance"),
         severe_freshness=_as_number(data, "severe_freshness"),
+        severe_hold_hours=_as_number(data, "severe_hold_hours"),
         raw_low=_as_number(data, "raw_low"),
         raw_high=_as_number(data, "raw_high"),
         rules=rules,
@@ -515,6 +518,13 @@ def _event(data: dict[str, Any], root: Path) -> EventConfig:
         raise ConfigError("event duplicate_jaccard must be between 0 and 1")
     if not 0 <= cfg.severe_importance <= 1 or not 0 <= cfg.severe_freshness <= 1:
         raise ConfigError("event severe thresholds must be between 0 and 1")
+    if cfg.severe_hold_hours < 66:
+        raise ConfigError(
+            "event severe_hold_hours must cover the next morning after a prior close, "
+            "including a weekend"
+        )
+    if cfg.severe_hold_hours > cfg.max_age_hours:
+        raise ConfigError("event severe_hold_hours cannot outlast max_age_hours")
     if cfg.raw_low >= cfg.raw_high:
         raise ConfigError("event raw_low must be below raw_high")
     return cfg

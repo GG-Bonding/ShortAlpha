@@ -20,10 +20,17 @@ def _loaded():
     return cfg.event, rules
 
 
-def _item(item_id: str, headline: str, published: datetime, *, summary: str = ""):
+def _item(
+    item_id: str,
+    headline: str,
+    published: datetime,
+    *,
+    summary: str = "",
+    symbols: tuple[str, ...] = ("NVDA",),
+):
     return NewsItem(
         id=item_id,
-        symbols=("NVDA",),
+        symbols=symbols,
         headline=headline,
         summary=summary,
         source="fixture",
@@ -161,7 +168,7 @@ def test_a_fresh_earnings_miss_is_severe_and_an_old_one_is_not() -> None:
     )
     freshness = math.exp(-0.05 * 20)
     assert freshness < 0.5
-    assert dict(stale.details)["event_risk"] == EventRisk.NONE.value
+    assert dict(stale.details)["event_risk"] == EventRisk.SEVERE_NEGATIVE.value
     assert stale.raw_value == pytest.approx(-0.9 * freshness * 0.7)
 
 
@@ -236,6 +243,195 @@ def test_reaction_uses_the_close_before_the_headline_and_the_close_before_the_si
     assert observed.rules_sha256 == "rules-hash"
     assert observed.content_sha256
     assert observed.reaction == pytest.approx(0.10)
+    assert dict(result.details)["post_event_reaction"] == f"{observed.reaction:.10f}"
+
+
+def test_overnight_news_has_no_completed_reaction_yet() -> None:
+    event, rules = _loaded()
+    session = date(2024, 6, 20)
+    as_of = datetime(2024, 6, 20, 9, 0, tzinfo=NY)
+    news_at = datetime(2024, 6, 19, 20, 0, tzinfo=NY)
+    bars = [_daily("NVDA", date(2024, 6, 18), 100)]
+    result = compute_event(
+        "NVDA",
+        [_item("n1", "NVDA earnings beat", news_at)],
+        as_of=as_of,
+        event=event,
+        rules=rules,
+        weight=25,
+        bars=bars,
+        session=session,
+    )
+    assert result.events[0].reaction is None
+    assert dict(result.details)["post_event_reaction"] == "missing"
+
+
+def test_acquisition_sides_are_not_the_same_direction() -> None:
+    event, rules = _loaded()
+    as_of = datetime(2024, 6, 20, 9, 0, tzinfo=NY)
+    item = _item(
+        "deal",
+        "AAA to acquire BBB",
+        as_of,
+        symbols=("AAA", "BBB"),
+    )
+    buyer = compute_event("AAA", [item], as_of=as_of, event=event, rules=rules, weight=25)
+    target = compute_event("BBB", [item], as_of=as_of, event=event, rules=rules, weight=25)
+    assert buyer.events[0].rule_id == "ma_buyer"
+    assert buyer.raw_value < 0
+    assert target.events[0].rule_id == "ma_announced"
+    assert target.raw_value == pytest.approx(0.95 * 0.65)
+    assert target.score == pytest.approx(_score(0.95 * 0.65))
+    assert buyer.score != pytest.approx(target.score)
+
+
+def test_a_company_name_can_identify_the_buyer() -> None:
+    event, rules = _loaded()
+    as_of = datetime(2024, 6, 20, 9, 0, tzinfo=NY)
+    item = _item(
+        "deal",
+        "Shopify to acquire Deliveroo",
+        as_of,
+        symbols=("SHOP", "DLVY"),
+    )
+    names = {
+        "SHOP": "Shopify Inc. Class A Subordinate Voting Shares",
+        "DLVY": "Deliveroo plc",
+    }
+    buyer = compute_event(
+        "SHOP", [item], as_of=as_of, event=event, rules=rules, weight=25, names=names
+    )
+    target = compute_event(
+        "DLVY", [item], as_of=as_of, event=event, rules=rules, weight=25, names=names
+    )
+    assert buyer.events[0].rule_id == "ma_buyer"
+    assert target.events[0].label == "Acquisition target"
+
+
+def test_the_target_phrase_stays_positive_for_the_company_being_acquired() -> None:
+    event, rules = _loaded()
+    as_of = datetime(2024, 6, 20, 9, 0, tzinfo=NY)
+    item = _item("deal", "BBB agrees to be acquired by AAA", as_of, symbols=("AAA", "BBB"))
+    target = compute_event("BBB", [item], as_of=as_of, event=event, rules=rules, weight=25)
+    buyer = compute_event("AAA", [item], as_of=as_of, event=event, rules=rules, weight=25)
+    assert target.events[0].rule_id == "ma_announced"
+    assert buyer.events[0].rule_id == "ma_buyer"
+
+
+def test_a_merger_agreement_without_a_role_is_not_scored() -> None:
+    event, rules = _loaded()
+    as_of = datetime(2024, 6, 20, 9, 0, tzinfo=NY)
+    item = _item("deal", "AAA and BBB sign a merger agreement", as_of, symbols=("AAA", "BBB"))
+    result = compute_event("AAA", [item], as_of=as_of, event=event, rules=rules, weight=25)
+    assert result.reasons == ("no qualifying events",)
+    assert "Ambiguous ma event ignored" in result.risks
+
+
+def test_filing_a_lawsuit_is_not_the_same_as_being_sued() -> None:
+    event, rules = _loaded()
+    as_of = datetime(2024, 6, 20, 9, 0, tzinfo=NY)
+    item = _item(
+        "suit",
+        "AAA files lawsuit against BBB",
+        as_of,
+        symbols=("AAA", "BBB"),
+    )
+    filer = compute_event("AAA", [item], as_of=as_of, event=event, rules=rules, weight=25)
+    defendant = compute_event("BBB", [item], as_of=as_of, event=event, rules=rules, weight=25)
+    assert filer.reasons == ("no qualifying events",)
+    assert dict(filer.details)["event_risk"] == EventRisk.NONE.value
+    assert defendant.events[0].rule_id == "legal_action"
+    assert defendant.raw_value < 0
+    assert dict(defendant.details)["event_risk"] == EventRisk.SEVERE_NEGATIVE.value
+
+    hit = compute_event(
+        "AAA",
+        [_item("hit", "AAA hit with lawsuit", as_of, symbols=("AAA",))],
+        as_of=as_of,
+        event=event,
+        rules=rules,
+        weight=25,
+    )
+    assert dict(hit.details)["event_risk"] == EventRisk.SEVERE_NEGATIVE.value
+    alone = compute_event(
+        "AAA",
+        [_item("file", "AAA files lawsuit", as_of, symbols=("AAA",))],
+        as_of=as_of,
+        event=event,
+        rules=rules,
+        weight=25,
+    )
+    assert alone.reasons == ("no qualifying events",)
+    assert dict(alone.details)["event_risk"] == EventRisk.NONE.value
+
+
+def test_an_earnings_sentence_does_not_score_the_other_tagged_symbol() -> None:
+    event, rules = _loaded()
+    as_of = datetime(2024, 6, 20, 9, 0, tzinfo=NY)
+    item = _item("earn", "AAA earnings beat. BBB was unchanged.", as_of, symbols=("AAA", "BBB"))
+    subject = compute_event("AAA", [item], as_of=as_of, event=event, rules=rules, weight=25)
+    bystander = compute_event("BBB", [item], as_of=as_of, event=event, rules=rules, weight=25)
+    assert subject.reasons == ("Earnings beat",)
+    assert bystander.reasons == ("no qualifying events",)
+
+
+def test_a_fresh_offering_outweighs_an_earnings_beat_and_a_target_cut_does_not() -> None:
+    event, rules = _loaded()
+    as_of = datetime(2024, 6, 20, 9, 0, tzinfo=NY)
+    offered = compute_event(
+        "NVDA",
+        [_item("both", "NVDA earnings beat after a shelf registration", as_of)],
+        as_of=as_of,
+        event=event,
+        rules=rules,
+        weight=25,
+    )
+    assert offered.raw_value < 0
+    assert dict(offered.details)["event_risk"] == EventRisk.NONE.value
+    cut = compute_event(
+        "NVDA",
+        [_item("cut", "NVDA earnings beat and the firm lowers price target", as_of)],
+        as_of=as_of,
+        event=event,
+        rules=rules,
+        weight=25,
+    )
+    assert cut.raw_value > 0
+    assert dict(cut.details)["event_risk"] == EventRisk.NONE.value
+    assert "Earnings beat" in cut.reasons
+    assert "Price target cut" in cut.risks
+
+
+def test_a_guidance_cut_stays_severe_through_the_next_morning() -> None:
+    event, rules = _loaded()
+    as_of = datetime(2024, 6, 20, 9, 0, tzinfo=NY)
+    for hours in (13, 14, 17):
+        result = compute_event(
+            "NVDA",
+            [_item(f"g{hours}", "NVDA guidance cut", as_of - timedelta(hours=hours))],
+            as_of=as_of,
+            event=event,
+            rules=rules,
+            weight=25,
+        )
+        assert dict(result.details)["event_risk"] == EventRisk.SEVERE_NEGATIVE.value
+        freshness = math.exp(-0.05 * hours)
+        assert result.raw_value == pytest.approx(-0.85 * freshness * 0.7)
+
+    friday = datetime(2024, 6, 14, 16, 0, tzinfo=NY)
+    monday = datetime(2024, 6, 17, 9, 0, tzinfo=NY)
+    assert (monday - friday).total_seconds() / 3600 == pytest.approx(65)
+    weekend = compute_event(
+        "NVDA",
+        [_item("weekend", "NVDA guidance cut", friday)],
+        as_of=monday,
+        event=event,
+        rules=rules,
+        weight=25,
+    )
+    assert dict(weekend.details)["event_risk"] == EventRisk.SEVERE_NEGATIVE.value
+    aged = math.exp(-0.05 * 65)
+    assert weekend.raw_value == pytest.approx(-0.85 * aged * 0.7)
 
 
 def _daily(symbol: str, day: date, close: float) -> DailyBar:

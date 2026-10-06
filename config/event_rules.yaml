@@ -106,17 +106,34 @@ types:
     patterns:
       - "price target cut"
       - "cuts price target"
+      - "cuts its price target"
       - "lowered its price target"
+      - "lowers price target"
+      - "lowers its price target"
 
   - id: ma_announced
     family: ma
     direction: 1
     importance: 0.95
     confidence: 0.65
-    label: M&A
+    label: Acquisition target
     patterns:
       - "to acquire"
       - "agrees to be acquired"
+      - "to be acquired"
+      - "merger agreement"
+
+  # The buyer pays the premium. This is not a measured premium or dilution figure.
+  - id: ma_buyer
+    family: ma
+    direction: -1
+    importance: 0.7
+    confidence: 0.65
+    label: Acquisition buyer
+    patterns:
+      - "to acquire"
+      - "agrees to be acquired"
+      - "to be acquired"
       - "merger agreement"
 
   - id: ma_terminated
@@ -223,3 +240,16 @@ types:
     patterns:
       - "lawsuit dismissed"
       - "settles lawsuit"
+
+  # A fresh offering outweighs one fresh earnings beat. It stays under the severe bar.
+  - id: share_offering
+    family: offering
+    direction: -1
+    importance: 0.75
+    confidence: 0.9
+    label: Share offering
+    patterns:
+      - "shelf registration"
+      - "files a prospectus"
+      - "secondary offering"
+      - "stock offering"

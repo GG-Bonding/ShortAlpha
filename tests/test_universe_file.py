@@ -21,7 +21,7 @@ def test_sources_are_deduped_and_class_shares_normalized(tmp_path: Path) -> None
     sp500 = tmp_path / "sp.csv"
     nasdaq = tmp_path / "ndx.csv"
     _write(sp500, [("AAA", "Alpha"), ("brk-b", "Berkshire")])
-    _write(nasdaq, [("AAA", "Alpha"), ("BBB", "Beta")])
+    _write(nasdaq, [("AAA", "Alpha NDX"), ("BBB", "Beta")])
     loaded = load_membership(
         sources=("sp500", "nasdaq100"),
         files={"sp500": sp500, "nasdaq100": nasdaq},
@@ -30,11 +30,15 @@ def test_sources_are_deduped_and_class_shares_normalized(tmp_path: Path) -> None
     assert loaded.point_in_time_membership is False
     assert loaded.list_as_of == date(2026, 8, 9)
     members = {member.symbol: member.sources for member in loaded.members}
+    names = {member.symbol: member.name for member in loaded.members}
     assert members == {
         "AAA": ("nasdaq100", "sp500"),
         "BBB": ("nasdaq100",),
         "BRK.B": ("sp500",),
     }
+    assert names["AAA"] == "Alpha"
+    assert names["BBB"] == "Beta"
+    assert names["BRK.B"] == "Berkshire"
 
 
 def test_duplicate_symbol_in_one_file_fails(tmp_path: Path) -> None:

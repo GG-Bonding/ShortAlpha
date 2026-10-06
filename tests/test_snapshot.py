@@ -21,7 +21,12 @@ def _cfg():
 
 
 def _factor(name: str, score: float, *, reasons=(), risks=()) -> FactorResult:
-    details = (("event_risk", "NONE"),) if name == "event" else ()
+    if name == "event":
+        details = (("event_risk", "NONE"), ("post_event_reaction", "0.0100000000"))
+    elif name == "price_action":
+        details = (("degraded", "false"), ("gap", "0.0680000000"))
+    else:
+        details = ()
     return FactorResult(
         name=name,
         raw_value=score,
@@ -149,7 +154,29 @@ def test_scan_text_lists_reasons_risks_and_the_no_trade_flag() -> None:
     assert "- Premarket gap +6.8%" in text
     assert "Prior expectation is unknown" in text
     assert "Positioning is unknown" in text
+    assert "Same-day price:" in text
+    assert "premarket gap +6.8%" in text
+    assert "Setup: continuation." in text
     assert text.endswith("NO_TRADE:\nfalse")
+
+
+def test_scan_counts_names_that_lack_a_same_day_price() -> None:
+    text = format_scan(
+        {
+            "signal_date": "2024-06-20",
+            "signal_time": "09:00:00",
+            "market_regime": "NORMAL",
+            "no_trade": True,
+            "symbols": [],
+            "ranked": [
+                {"thesis_veto": "same-day price confirmation is missing"},
+                {"thesis_veto": "same-day price confirmation is missing"},
+                {"thesis_veto": "no positive classified change"},
+            ],
+        }
+    )
+    assert "Same-day price missing:\n2" in text
+    assert text.endswith("NO_TRADE:\ntrue")
 
 
 def test_missing_symbol_is_an_error() -> None:

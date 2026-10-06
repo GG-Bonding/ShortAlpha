@@ -56,12 +56,18 @@ def load_membership(
     as_of: dict[str, date],
 ) -> UniverseList:
     grouped: dict[str, set[str]] = {}
+    names: dict[str, str] = {}
     for source in sources:
         path = files[source]
-        for symbol in _read_symbols(path):
+        for symbol, name in _read_members(path):
             grouped.setdefault(symbol, set()).add(source)
+            names.setdefault(symbol, name)
     members = tuple(
-        UniverseMember(symbol=symbol, sources=tuple(sorted(grouped[symbol])))
+        UniverseMember(
+            symbol=symbol,
+            sources=tuple(sorted(grouped[symbol])),
+            name=names[symbol],
+        )
         for symbol in sorted(grouped)
     )
     source_as_of = tuple((source, as_of[source]) for source in sorted(sources))
@@ -150,7 +156,7 @@ def format_number(value: float) -> str:
     return f"{rounded:.4f}"
 
 
-def _read_symbols(path: Path) -> list[str]:
+def _read_members(path: Path) -> list[tuple[str, str]]:
     with path.open(newline="", encoding="utf-8-sig") as handle:
         reader = csv.DictReader(handle)
         if reader.fieldnames is None or [name.lstrip("\ufeff") for name in reader.fieldnames] != [
@@ -158,7 +164,7 @@ def _read_symbols(path: Path) -> list[str]:
             "name",
         ]:
             raise FixtureError(f"{path} must have columns symbol,name")
-        symbols: list[str] = []
+        members: list[tuple[str, str]] = []
         seen: set[str] = set()
         for row in reader:
             name = (row.get("name") or "").strip()
@@ -172,10 +178,10 @@ def _read_symbols(path: Path) -> list[str]:
             if symbol in seen:
                 raise FixtureError(f"duplicate symbol {symbol} in {path}")
             seen.add(symbol)
-            symbols.append(symbol)
-    if not symbols:
+            members.append((symbol, name))
+    if not members:
         raise FixtureError(f"{path} has no symbols")
-    return symbols
+    return members
 
 
 def _normalize_symbol(raw: str) -> str:

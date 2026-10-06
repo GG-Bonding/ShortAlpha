@@ -158,6 +158,7 @@ class NewsItem:
 class UniverseMember:
     symbol: str
     sources: tuple[str, ...]
+    name: str = ""
 
     def __post_init__(self) -> None:
         validate_symbol(self.symbol)

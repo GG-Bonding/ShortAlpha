@@ -57,7 +57,11 @@ event:
   duplicate_jaccard: 0.6
   max_age_hours: 72
   severe_importance: 0.8
+  # Score decay still uses freshness_lambda. This floor does not set the hard exclusion.
   severe_freshness: 0.5
+  # A severe negative stays excluded for this many hours. 72 covers the next
+  # 09:00 after the prior close, including a weekend and the autumn clock change.
+  severe_hold_hours: 72
   raw_low: -1.0
   raw_high: 1.0
   rules: config/event_rules.yaml

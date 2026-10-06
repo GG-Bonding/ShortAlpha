@@ -1,6 +1,8 @@
-# GICS sector to SPDR sector ETF.
+# GICS sector to SPDR sector ETF. This is not ICB.
 # S&P 500 names come from the 2026-09-21 snapshot.
-# Nasdaq-100-only names are omitted until a sourced sector exists.
+# Nasdaq-100-only names use the same GICS sector. A missing key still
+# skips relative strength; SPY is not a substitute.
+# SPCX is Communication Services because connectivity is the principal business.
 # Keys are quoted because YAML treats ON/NO/Y/N as booleans.
 symbols:
   "A": XLV
@@ -24,10 +26,12 @@ symbols:
   "AIZ": XLF
   "AJG": XLF
   "AKAM": XLK
+  "ALAB": XLK
   "ALB": XLB
   "ALGN": XLV
   "ALL": XLF
   "ALLE": XLI
+  "ALNY": XLV
   "AMAT": XLK
   "AMCR": XLB
   "AMD": XLK
@@ -47,6 +51,8 @@ symbols:
   "APTV": XLY
   "ARE": XLRE
   "ARES": XLF
+  "ARM": XLK
+  "ASML": XLK
   "ATO": XLU
   "AVGO": XLK
   "AVY": XLB
@@ -86,6 +92,7 @@ symbols:
   "CBOE": XLF
   "CBRE": XLRE
   "CCC": XLE
+  "CCEP": XLP
   "CCI": XLRE
   "CCL": XLY
   "CDNS": XLK
@@ -122,6 +129,7 @@ symbols:
   "CRL": XLV
   "CRM": XLK
   "CRWD": XLK
+  "CRWV": XLK
   "CSCO": XLK
   "CSGP": XLRE
   "CSX": XLI
@@ -190,6 +198,7 @@ symbols:
   "FDX": XLI
   "FDXF": XLI
   "FE": XLU
+  "FER": XLI
   "FERG": XLI
   "FFIV": XLK
   "FICO": XLK
@@ -309,6 +318,7 @@ symbols:
   "MCO": XLF
   "MDLZ": XLP
   "MDT": XLV
+  "MELI": XLY
   "MET": XLF
   "META": XLC
   "MGM": XLY
@@ -328,9 +338,11 @@ symbols:
   "MSCI": XLF
   "MSFT": XLK
   "MSI": XLK
+  "MSTR": XLK
   "MTB": XLF
   "MTD": XLV
   "MU": XLK
+  "NBIS": XLK
   "NCLH": XLY
   "NDAQ": XLF
   "NDSN": XLI
@@ -365,6 +377,7 @@ symbols:
   "PAYX": XLI
   "PCAR": XLI
   "PCG": XLU
+  "PDD": XLY
   "PEG": XLU
   "PEP": XLP
   "PFE": XLV
@@ -398,6 +411,7 @@ symbols:
   "REGN": XLV
   "RF": XLF
   "RJF": XLF
+  "RKLB": XLI
   "RL": XLY
   "RMD": XLV
   "ROK": XLI
@@ -410,6 +424,7 @@ symbols:
   "SBAC": XLRE
   "SBUX": XLY
   "SCHW": XLF
+  "SHOP": XLK
   "SHW": XLB
   "SJM": XLP
   "SLB": XLE
@@ -419,6 +434,7 @@ symbols:
   "SNPS": XLK
   "SO": XLU
   "SOLV": XLV
+  "SPCX": XLC
   "SPG": XLRE
   "SPGI": XLF
   "SRE": XLU
@@ -448,6 +464,7 @@ symbols:
   "TPL": XLE
   "TPR": XLY
   "TRGP": XLE
+  "TRI": XLI
   "TRMB": XLK
   "TROW": XLF
   "TRV": XLF

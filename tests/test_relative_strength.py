@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 
 from shortalpha.calendar import NYSECalendar
@@ -8,19 +10,41 @@ from shortalpha.factors.relative_strength import (
     load_sector_map,
     sector_etf_for,
 )
+from shortalpha.universe import load_membership
 from tests.factor_setup import SESSION, closes, prior_sessions, signal_time
 
 
-def test_sector_map_uses_the_sp500_gics_snapshot(repo_root) -> None:
+def test_sector_map_covers_the_universe_and_not_an_unknown_symbol(repo_root) -> None:
     mapping = load_sector_map(repo_root / "config" / "sector_map.yaml")
     assert mapping["AAPL"] == "XLK"
     assert mapping["JPM"] == "XLF"
     assert mapping["XOM"] == "XLE"
+    assert mapping["SHOP"] == "XLK"
+    assert mapping["RKLB"] == "XLI"
+    assert mapping["ALNY"] == "XLV"
+    assert mapping["CCEP"] == "XLP"
+    assert mapping["MELI"] == "XLY"
+    assert mapping["PDD"] == "XLY"
+    assert mapping["SPCX"] == "XLC"
+    missing = _universe_symbols(repo_root) - set(mapping)
+    assert missing == set()
     as_of = signal_time()
-    with pytest.raises(DataUnavailableError, match="SHOP") as caught:
-        sector_etf_for("SHOP", mapping, as_of)
+    with pytest.raises(DataUnavailableError, match="NO_SUCH") as caught:
+        sector_etf_for("NO_SUCH", mapping, as_of)
     assert caught.value.provider == "sector_map"
     assert caught.value.operation == "relative_strength"
+
+
+def _universe_symbols(root) -> set[str]:
+    loaded = load_membership(
+        sources=("sp500", "nasdaq100"),
+        files={
+            "sp500": root / "fixtures/universe/sp500.csv",
+            "nasdaq100": root / "fixtures/universe/nasdaq100.csv",
+        },
+        as_of={"sp500": date(2026, 9, 21), "nasdaq100": date(2026, 8, 9)},
+    )
+    return {member.symbol for member in loaded.members}
 
 
 def test_relative_strength_blends_market_and_sector(repo_root) -> None:

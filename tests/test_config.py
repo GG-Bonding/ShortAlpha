@@ -23,6 +23,7 @@ def test_default_config_loads_signal_time_as_clock(repo_root: Path) -> None:
     assert cfg.universe.filters.min_price == 5
     assert cfg.universe.filters.min_avg_dollar_volume_20d == 50_000_000
     assert cfg.event.freshness_lambda == 0.05
+    assert cfg.event.severe_hold_hours == 72
     assert cfg.price_action.gap_penalty_start == 0.03
     assert cfg.alpaca.adjustment == "raw"
     assert cfg.evaluation.min_mature_dates == 6
@@ -64,6 +65,12 @@ def test_momentum_components_must_sum_to_one(repo_root: Path, tmp_path: Path) ->
 def test_price_action_parts_must_sum_to_weight(repo_root: Path, tmp_path: Path) -> None:
     path = _write_variant(repo_root, tmp_path, "break_bonus: 2.5", "break_bonus: 3")
     with pytest.raises(ConfigError, match="price_action"):
+        load_config(path, root=repo_root)
+
+
+def test_severe_hold_must_cover_the_next_morning(repo_root: Path, tmp_path: Path) -> None:
+    path = _write_variant(repo_root, tmp_path, "severe_hold_hours: 72", "severe_hold_hours: 24")
+    with pytest.raises(ConfigError, match="severe_hold_hours"):
         load_config(path, root=repo_root)
 
 

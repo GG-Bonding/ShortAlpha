@@ -17,7 +17,12 @@ def _cfg():
 
 
 def _factor(name: str, score: float, *, event_risk: str = "NONE") -> FactorResult:
-    details = (("event_risk", event_risk),) if name == "event" else ()
+    if name == "event":
+        details = (("event_risk", event_risk),)
+    elif name == "price_action":
+        details = (("degraded", "false"), ("gap", "0.0200000000"))
+    else:
+        details = ()
     return FactorResult(
         name=name,
         raw_value=score,
@@ -190,9 +195,14 @@ def _named(
 ) -> SymbolFactors:
     factors = []
     for name, score in scores.items():
-        factor_details = (("event_risk", "NONE"),) if name == "event" else ()
         if details is not None and name in details:
             factor_details = details[name]
+        elif name == "event":
+            factor_details = (("event_risk", "NONE"),)
+        elif name == "price_action":
+            factor_details = (("degraded", "false"), ("gap", "0.0200000000"))
+        else:
+            factor_details = ()
         factors.append(
             FactorResult(
                 name=name,
@@ -231,6 +241,7 @@ def test_price_and_extension_can_reject_a_positive_classification() -> None:
         _five(90),
         raw={"event": 0.4, "relative_strength": -0.01},
         reasons={"event": ("Earnings beat",)},
+        details={"price_action": (("degraded", "true"),)},
     )
     extended = _named(
         "CCC",
@@ -255,12 +266,14 @@ def test_price_and_extension_can_reject_a_positive_classification() -> None:
     book = _book([lagged, extended, gapped])
     vetoes = {row.symbol: row.thesis_veto for row in book.ranked}
     assert vetoes == {
-        "BBB": "price has not outperformed SPY and the sector",
+        "BBB": "same-day price confirmation is missing",
         "CCC": "five-day move already exceeds 25%",
         "DDD": "premarket gap already exceeds 8%",
     }
     assert book.published == ()
     assert all(row.label is SignalLabel.PASS for row in book.ranked)
+    missing = next(row for row in book.ranked if row.symbol == "BBB")
+    assert "Same-day price is missing" in missing.thesis
 
 
 def test_below_baseline_volume_does_not_veto() -> None:
@@ -278,6 +291,55 @@ def test_below_baseline_volume_does_not_veto() -> None:
     assert book.published[0].thesis_veto is None
     assert "Positioning is unknown" in book.published[0].thesis
     assert "0.4x the baseline" in book.published[0].thesis
+    assert "Setup: continuation." in book.published[0].thesis
+    assert "Same-day premarket gap is +2.0%." in book.published[0].thesis
+
+
+def test_a_confirmed_new_catalyst_does_not_need_pre_event_strength() -> None:
+    book = _book(
+        [
+            _named(
+                "EEE",
+                _five(90),
+                raw={"event": 0.4, "relative_strength": -0.01},
+                reasons={"event": ("Earnings beat",)},
+            )
+        ]
+    )
+    assert book.published[0].symbol == "EEE"
+    assert book.published[0].thesis_veto is None
+    assert "Setup: new catalyst." in book.published[0].thesis
+    assert "Pre-event trend: 5-day excess versus SPY and the sector is -1.0%." in (
+        book.published[0].thesis
+    )
+
+
+def test_prior_strength_is_not_confirmation() -> None:
+    extended = _named(
+        "FFF",
+        _five(90),
+        raw={"event": 0.4, "relative_strength": 0.02},
+        reasons={"event": ("Earnings beat",)},
+        details={
+            "event": (("event_risk", "NONE"), ("post_event_reaction", "0.0900000000")),
+            "price_action": (("degraded", "false"), ("gap", "0.0200000000")),
+        },
+    )
+    rejected = _named(
+        "GGG",
+        _five(90),
+        raw={"event": 0.4, "relative_strength": 0.04},
+        reasons={"event": ("Guidance raised",)},
+        details={"price_action": (("degraded", "false"), ("gap", "-0.0100000000"))},
+    )
+    book = _book([extended, rejected])
+    vetoes = {row.symbol: row.thesis_veto for row in book.ranked}
+    assert vetoes == {
+        "FFF": "post-event move already exceeds 8%",
+        "GGG": "price has not confirmed the event",
+    }
+    assert "Setup: unconfirmed." in book.ranked[0].thesis
+    assert book.published == ()
 
 
 def test_as_of_must_be_timezone_aware() -> None:

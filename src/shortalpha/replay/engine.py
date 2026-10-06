@@ -121,6 +121,7 @@ def run_session(
     as_of = calendar.signal_time(session, cfg.signal.time, _zone(cfg.signal.timezone))
     history_start = calendar.shift(session, -30)
     loaded = universe.load(as_of)
+    names = {member.symbol: member.name for member in loaded.members if member.name}
     spy = market.daily_bars(cfg.benchmarks.market, history_start, session, as_of)
     qqq = market.daily_bars(cfg.benchmarks.growth, history_start, session, as_of)
     spy_return = _trailing_return(cfg.benchmarks.market, spy, session, as_of, calendar)
@@ -204,6 +205,7 @@ def run_session(
                     bars=bars,
                     session=session,
                     splits=stock_splits,
+                    names=names,
                 ),
                 compute_relative_strength(
                     member.symbol,

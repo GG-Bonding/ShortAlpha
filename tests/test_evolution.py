@@ -130,9 +130,9 @@ def _factors(scores: dict[str, float], event: dict[str, object]) -> dict[str, ob
             "classified_events": [event] if name == "event" else [],
             "details": {"overheated": "false"}
             if name == "momentum"
-            else {"degraded": "true"}
+            else {"degraded": "false", "gap": "0.0200000000"}
             if name == "price_action"
-            else {"event_risk": "NONE"}
+            else {"event_risk": "NONE", "post_event_reaction": "0.0100000000"}
             if name == "event"
             else {},
             "normalized_value": None,

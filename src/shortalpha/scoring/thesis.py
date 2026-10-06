@@ -23,25 +23,32 @@ def assess_thesis(factors: dict[str, FactorResult]) -> Thesis:
     momentum = factors["momentum"]
     volume = factors["volume"]
     price = factors["price_action"]
-    veto = _veto(event, relative, momentum, price)
-    return Thesis(supported=veto is None, veto=veto, text=_text(event, relative, volume, veto))
+    gap = _gap(price)
+    reaction = _completed_reaction(event)
+    veto = _veto(event, momentum, gap, reaction)
+    setup = _setup(relative, veto)
+    text = _text(event, relative, volume, gap, reaction, setup, veto)
+    return Thesis(supported=veto is None, veto=veto, text=text)
 
 
 def _veto(
     event: FactorResult,
-    relative: FactorResult,
     momentum: FactorResult,
-    price: FactorResult,
+    gap: float | None,
+    reaction: float | None,
 ) -> str | None:
     if event.raw_value is None or event.raw_value <= 0 or _EMPTY in event.reasons:
         return "no positive classified change"
-    if relative.raw_value is None or relative.raw_value <= 0:
-        return "price has not outperformed SPY and the sector"
     if dict(momentum.details).get("overheated") == "true":
         return "five-day move already exceeds 25%"
-    gap = _gap(price)
     if gap is not None and gap >= _GAP_HARD:
         return "premarket gap already exceeds 8%"
+    if reaction is not None and reaction >= _GAP_HARD:
+        return "post-event move already exceeds 8%"
+    if gap is None:
+        return "same-day price confirmation is missing"
+    if gap <= 0 or (reaction is not None and reaction <= 0):
+        return "price has not confirmed the event"
     return None
 
 
@@ -52,18 +59,51 @@ def _gap(price: FactorResult) -> float | None:
     return float(details["gap"])
 
 
+def _completed_reaction(event: FactorResult) -> float | None:
+    details = dict(event.details)
+    if "post_event_reaction" in details:
+        raw = details["post_event_reaction"]
+        if raw == "missing":
+            return None
+        return float(raw)
+    positive = [item for item in event.events if item.direction > 0]
+    if not positive:
+        return None
+    latest = max(positive, key=lambda item: (item.available_at, item.news_id))
+    return latest.reaction
+
+
+def _setup(relative: FactorResult, veto: str | None) -> str:
+    if veto is not None:
+        return "unconfirmed"
+    if relative.raw_value is not None and relative.raw_value > 0:
+        return "continuation"
+    return "new catalyst"
+
+
 def _text(
     event: FactorResult,
     relative: FactorResult,
     volume: FactorResult,
+    gap: float | None,
+    reaction: float | None,
+    setup: str,
     veto: str | None,
 ) -> str:
     labels = [reason for reason in event.reasons if reason != _EMPTY]
     change = ", ".join(labels) if labels else "none"
     if relative.raw_value is None:
-        reaction = "relative strength is unavailable"
+        trend = "relative strength is unavailable"
     else:
-        reaction = f"5-day excess versus SPY and the sector is {relative.raw_value * 100:+.1f}%"
+        trend = f"5-day excess versus SPY and the sector is {relative.raw_value * 100:+.1f}%"
+    if reaction is None:
+        after = "no completed session after the event"
+    else:
+        after = f"{reaction * 100:+.1f}%"
+    if gap is None:
+        same_day = "Same-day price is missing"
+    else:
+        same_day = f"Same-day premarket gap is {gap * 100:+.1f}%"
     if volume.raw_value is None:
         activity = "volume check is unavailable"
     elif volume.raw_value >= 1:
@@ -76,12 +116,18 @@ def _text(
         "Prior expectation is unknown; a headline class is not a consensus estimate. "
         f"Classified change: {change}. "
         "The earnings or valuation channel is not measured. "
-        f"Price reaction: {reaction}. "
+        f"Pre-event trend: {trend}. "
+        f"Post-event reaction: {after}. "
+        f"{same_day}. "
+        f"Setup: {setup}. "
+        "A positive pre-event trend labels continuation. "
+        "A new catalyst does not need that trend once the post-event price confirms the change. "
         f"{activity}. "
         "Positioning is unknown. "
         "Continuation over the next 1-3 days is an untested hypothesis. "
-        "The judgment fails on a severe negative event, non-positive relative strength, "
-        "a five-day move above 25%, or a premarket gap above 8%."
+        "The judgment fails when there is no positive classified change, "
+        "the five-day move exceeds 25%, the post-event move or premarket gap reaches 8%, "
+        "the same-day price is missing, or the post-event price does not confirm the event."
     )
     if veto is None:
         return body
