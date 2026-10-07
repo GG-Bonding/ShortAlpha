@@ -94,12 +94,16 @@ def compute_event(
         )
     contributions: list[tuple[datetime, str, float, float, float]] = []
     classified: list[ClassifiedEvent] = []
+    baselines: dict[str, datetime] = {}
     severe = False
     for item, rule in kept:
         age_hours = (as_of - item.published_at).total_seconds() / 3600
         freshness = math.exp(-event.freshness_lambda * age_hours)
         signed = rule.direction * rule.importance * freshness * rule.confidence
         contributions.append((item.published_at, rule.label, signed, rule.direction, freshness))
+        move, baseline_at = _reaction(bars, item.available_at, session, as_of, splits, symbol)
+        if baseline_at is not None:
+            baselines[item.id] = baseline_at
         classified.append(
             ClassifiedEvent(
                 news_id=item.id,
@@ -115,7 +119,7 @@ def compute_event(
                 direction=rule.direction,
                 importance=rule.importance,
                 freshness=freshness,
-                reaction=_reaction(bars, item.available_at, session, as_of, splits, symbol),
+                reaction=move,
             )
         )
         if (
@@ -145,6 +149,8 @@ def compute_event(
             ("raw_sum", f"{raw_sum:.10f}"),
             ("kept", str(len(kept))),
             ("post_event_reaction", _reaction_text(classified)),
+            ("reaction_baseline_time", _baseline_text(classified, baselines)),
+            ("news_available_at", _news_time_text(classified)),
         ),
         events=tuple(classified),
     )
@@ -231,9 +237,12 @@ def _select_roles(
             _keep_legal(group, text, item, symbol, names, kept, ambiguous)
             continue
         if family in _CLAUSE_FAMILIES:
-            if _clause_mentions(text, group, symbol, names) or len(item.symbols) == 1:
+            chosen, shared = _rules_in_symbol_clauses(text, group, symbol, item.symbols, names)
+            if chosen:
+                kept.extend(chosen)
+            elif len(item.symbols) == 1 and _patterns_present(text, group):
                 kept.extend(group)
-            else:
+            elif shared:
                 ambiguous.append(family)
             continue
         kept.extend(group)
@@ -364,20 +373,67 @@ def _legal_role(
     return None
 
 
+_CLAUSE_BREAK = re.compile(
+    r"\s+while\s+|\s+whereas\s+|\s+but\s+|\s+although\s+|[\n.!;?,]+",
+    re.IGNORECASE,
+)
+
+
+def _clauses(text: str) -> list[str]:
+    return [part.strip() for part in _CLAUSE_BREAK.split(text) if part.strip()]
+
+
+def _patterns_present(text: str, rules: list[EventTypeRule]) -> bool:
+    folded = text.casefold()
+    return any(pattern.casefold() in folded for rule in rules for pattern in rule.patterns)
+
+
+def _rules_in_symbol_clauses(
+    text: str,
+    rules: list[EventTypeRule],
+    symbol: str,
+    symbols: tuple[str, ...],
+    names: Mapping[str, str],
+) -> tuple[list[EventTypeRule], bool]:
+    chosen: list[EventTypeRule] = []
+    shared = False
+    for rule in rules:
+        status = _rule_clause_status(text, rule, symbol, symbols, names)
+        if status == "owner":
+            chosen.append(rule)
+        elif status == "shared":
+            shared = True
+    return chosen, shared
+
+
+def _rule_clause_status(
+    text: str,
+    rule: EventTypeRule,
+    symbol: str,
+    symbols: tuple[str, ...],
+    names: Mapping[str, str],
+) -> str:
+    shared = False
+    for clause in _clauses(text):
+        if not any(pattern.casefold() in clause.casefold() for pattern in rule.patterns):
+            continue
+        mentioned = [item for item in symbols if _mentioned(clause, item, names)]
+        if mentioned == [symbol]:
+            return "owner"
+        if symbol in mentioned and len(mentioned) > 1:
+            shared = True
+    return "shared" if shared else "none"
+
+
 def _clause_mentions(
     text: str,
     rules: list[EventTypeRule],
     symbol: str,
     names: Mapping[str, str],
 ) -> bool:
-    patterns = [pattern for rule in rules for pattern in rule.patterns]
-    for sentence in re.split(r"[\n.!?]+", text):
-        folded = sentence.casefold()
-        if any(pattern.casefold() in folded for pattern in patterns) and _mentioned(
-            sentence, symbol, names
-        ):
-            return True
-    return False
+    return any(
+        _rule_clause_status(text, rule, symbol, (symbol,), names) == "owner" for rule in rules
+    )
 
 
 def _mentioned(text: str, symbol: str, names: Mapping[str, str]) -> bool:
@@ -414,14 +470,35 @@ def _normalize(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.casefold()).strip()
 
 
-def _reaction_text(classified: list[ClassifiedEvent]) -> str:
+def _latest_positive(classified: list[ClassifiedEvent]) -> ClassifiedEvent | None:
     positive = [item for item in classified if item.direction > 0]
     if not positive:
-        return "missing"
-    latest = max(positive, key=lambda item: (item.available_at, item.news_id))
-    if latest.reaction is None:
+        return None
+    return max(positive, key=lambda item: (item.available_at, item.news_id))
+
+
+def _reaction_text(classified: list[ClassifiedEvent]) -> str:
+    latest = _latest_positive(classified)
+    if latest is None or latest.reaction is None:
         return "missing"
     return f"{latest.reaction:.10f}"
+
+
+def _baseline_text(classified: list[ClassifiedEvent], baselines: dict[str, datetime]) -> str:
+    latest = _latest_positive(classified)
+    if latest is None:
+        return "missing"
+    baseline = baselines.get(latest.news_id)
+    if baseline is None:
+        return "missing"
+    return baseline.isoformat()
+
+
+def _news_time_text(classified: list[ClassifiedEvent]) -> str:
+    latest = _latest_positive(classified)
+    if latest is None:
+        return "missing"
+    return latest.available_at.isoformat()
 
 
 def _strength(rule: EventTypeRule) -> float:
@@ -450,27 +527,28 @@ def _reaction(
     as_of: datetime,
     splits: tuple[Split, ...],
     symbol: str,
-) -> float | None:
+) -> tuple[float | None, datetime | None]:
     if bars is None or session is None:
-        return None
+        return None, None
     completed = [
         bar
         for bar in bars
         if bar.symbol == symbol and bar.available_at <= as_of and bar.session_date < session
     ]
     if not completed:
-        return None
+        return None, None
     completed.sort(key=lambda bar: bar.session_date)
     prior = [bar for bar in completed if bar.available_at <= news_available]
     if not prior:
-        return None
+        return None, None
+    baseline_at = prior[-1].available_at
     if prior[-1].session_date == completed[-1].session_date:
-        return None
+        return None, baseline_at
     start = adjusted_close(prior[-1].close, prior[-1].session_date, session, splits, symbol)
     end = adjusted_close(completed[-1].close, completed[-1].session_date, session, splits, symbol)
     if start <= 0:
-        return None
-    return end / start - 1
+        return None, baseline_at
+    return end / start - 1, baseline_at
 
 
 def _unique(values) -> tuple[str, ...]:

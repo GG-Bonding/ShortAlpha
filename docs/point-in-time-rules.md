@@ -73,7 +73,7 @@ available_at <= signal_time
 
 盘前窗口是信号日的 `[premarket.start, signal_time]`，默认 04:00 到 09:00 ET。历史对比窗口是更早交易日的同一时钟区间，而且那些 bar 自己也必须已经可用。这个条件在回放里自然成立，因为它们早于信号日。
 
-`feed != sip` 时，系统不计算盘前比率，并写入 `premarket_volume_available = false`。这是降级，不是一条成交量为 0 的假观察。
+`feed != sip` 时，系统不计算盘前成交量比率，并写入 `premarket_volume_available = false`。这是降级，不是一条成交量为 0 的假观察。同一窗口里的最后一笔 IEX 价格可以带时间进入价格确认，并标明它不是合并行情。
 
 有 SIP、但该股票在窗口内没有成交：这是观察到的空窗，`volume = 0`，`last_price` 为空。价格行为因子不能由此编造价格。
 

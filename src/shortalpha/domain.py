@@ -187,18 +187,23 @@ class PremarketWindow:
     published_at: datetime | None
     available_at: datetime | None
     reason: str
+    price_consolidated: bool = True
 
     def __post_init__(self) -> None:
         validate_symbol(self.symbol)
+        if self.last_price is not None and self.last_price <= 0:
+            raise ValueError(f"{self.symbol} premarket last price is required")
+        if self.last_price is not None:
+            if self.event_time is None or self.published_at is None or self.available_at is None:
+                raise ValueError(f"{self.symbol} premarket price is missing timestamps")
+            validate_timeline(self.event_time, self.published_at, self.available_at)
         if self.available:
             if self.event_time is None or self.published_at is None or self.available_at is None:
                 raise ValueError(f"{self.symbol} premarket observation is missing timestamps")
             validate_timeline(self.event_time, self.published_at, self.available_at)
             if self.volume is None or self.volume < 0:
                 raise ValueError(f"{self.symbol} premarket volume is required")
-            if self.volume > 0 and (self.last_price is None or self.last_price <= 0):
-                raise ValueError(f"{self.symbol} premarket last price is required")
-            if self.last_price is not None and self.last_price <= 0:
+            if self.volume > 0 and self.last_price is None:
                 raise ValueError(f"{self.symbol} premarket last price is required")
             if self.volume == 0 and self.last_price is None and not self.reason:
                 raise ValueError(f"{self.symbol} empty premarket window needs a reason")

@@ -22,9 +22,19 @@ def _cfg():
 
 def _factor(name: str, score: float, *, reasons=(), risks=()) -> FactorResult:
     if name == "event":
-        details = (("event_risk", "NONE"), ("post_event_reaction", "0.0100000000"))
+        details = (
+            ("event_risk", "NONE"),
+            ("news_available_at", "2024-06-18T21:00:00-04:00"),
+            ("post_event_reaction", "0.0100000000"),
+        )
     elif name == "price_action":
-        details = (("degraded", "false"), ("gap", "0.0680000000"))
+        details = (
+            ("degraded", "false"),
+            ("gap", "0.0680000000"),
+            ("price_time", "2024-06-20T09:00:00-04:00"),
+            ("prior_close_time", "2024-06-18T20:00:00-04:00"),
+            ("price_consolidated", "true"),
+        )
     else:
         details = ()
     return FactorResult(

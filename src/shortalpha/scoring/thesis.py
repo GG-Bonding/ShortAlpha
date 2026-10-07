@@ -1,13 +1,17 @@
 """A classified change proposes the trade. Price can reject it.
 
 Prior expectations, earnings impact, and positioning are not invented when the
-inputs do not contain them.
+inputs do not contain them. The five-day relative-strength window is the
+window ending at the last completed session. It is called pre-event only when
+that window actually closed before the news.
 """
 
+from datetime import datetime
+
 from shortalpha.domain import FactorResult
+from shortalpha.scoring.confirmation import Confirmation, confirm_price
 
 _EMPTY = "no qualifying events"
-_GAP_HARD = 0.08
 
 
 class Thesis:
@@ -23,54 +27,23 @@ def assess_thesis(factors: dict[str, FactorResult]) -> Thesis:
     momentum = factors["momentum"]
     volume = factors["volume"]
     price = factors["price_action"]
-    gap = _gap(price)
-    reaction = _completed_reaction(event)
-    veto = _veto(event, momentum, gap, reaction)
+    confirmation = confirm_price(event, price)
+    veto = _veto(event, momentum, confirmation)
     setup = _setup(relative, veto)
-    text = _text(event, relative, volume, gap, reaction, setup, veto)
+    text = _text(event, relative, momentum, volume, confirmation, setup, veto)
     return Thesis(supported=veto is None, veto=veto, text=text)
 
 
 def _veto(
     event: FactorResult,
     momentum: FactorResult,
-    gap: float | None,
-    reaction: float | None,
+    confirmation: Confirmation,
 ) -> str | None:
     if event.raw_value is None or event.raw_value <= 0 or _EMPTY in event.reasons:
         return "no positive classified change"
     if dict(momentum.details).get("overheated") == "true":
         return "five-day move already exceeds 25%"
-    if gap is not None and gap >= _GAP_HARD:
-        return "premarket gap already exceeds 8%"
-    if reaction is not None and reaction >= _GAP_HARD:
-        return "post-event move already exceeds 8%"
-    if gap is None:
-        return "same-day price confirmation is missing"
-    if gap <= 0 or (reaction is not None and reaction <= 0):
-        return "price has not confirmed the event"
-    return None
-
-
-def _gap(price: FactorResult) -> float | None:
-    details = dict(price.details)
-    if details.get("degraded") != "false" or "gap" not in details:
-        return None
-    return float(details["gap"])
-
-
-def _completed_reaction(event: FactorResult) -> float | None:
-    details = dict(event.details)
-    if "post_event_reaction" in details:
-        raw = details["post_event_reaction"]
-        if raw == "missing":
-            return None
-        return float(raw)
-    positive = [item for item in event.events if item.direction > 0]
-    if not positive:
-        return None
-    latest = max(positive, key=lambda item: (item.available_at, item.news_id))
-    return latest.reaction
+    return confirmation.veto
 
 
 def _setup(relative: FactorResult, veto: str | None) -> str:
@@ -84,26 +57,24 @@ def _setup(relative: FactorResult, veto: str | None) -> str:
 def _text(
     event: FactorResult,
     relative: FactorResult,
+    momentum: FactorResult,
     volume: FactorResult,
-    gap: float | None,
-    reaction: float | None,
+    confirmation: Confirmation,
     setup: str,
     veto: str | None,
 ) -> str:
     labels = [reason for reason in event.reasons if reason != _EMPTY]
     change = ", ".join(labels) if labels else "none"
-    if relative.raw_value is None:
-        trend = "relative strength is unavailable"
+    if confirmation.cumulative is None:
+        after = "no price after the event"
     else:
-        trend = f"5-day excess versus SPY and the sector is {relative.raw_value * 100:+.1f}%"
-    if reaction is None:
-        after = "no completed session after the event"
-    else:
-        after = f"{reaction * 100:+.1f}%"
-    if gap is None:
-        same_day = "Same-day price is missing"
-    else:
-        same_day = f"Same-day premarket gap is {gap * 100:+.1f}%"
+        after = f"{confirmation.cumulative * 100:+.1f}% from the pre-event baseline"
+    baseline = {
+        "measured": "The baseline is the last completed close at or before the news",
+        "exact": "The baseline is the last observed price at or before the news",
+        "approximate": "The baseline is approximate because a session was open before the news",
+        "missing": "The baseline was not observed",
+    }[confirmation.baseline]
     if volume.raw_value is None:
         activity = "volume check is unavailable"
     elif volume.raw_value >= 1:
@@ -112,23 +83,70 @@ def _text(
         activity = (
             f"volume is {volume.raw_value:.1f}x the baseline and does not show unusual activity"
         )
+    ceiling = ""
+    if _non_positive(momentum) and _non_positive(relative):
+        ceiling = (
+            "Momentum and relative strength are not positive. "
+            "The new-catalyst label does not add points, and these two factors at or below zero "
+            "leave the total below 80 even when event, volume, and price action are full. "
+        )
     body = (
         "Prior expectation is unknown; a headline class is not a consensus estimate. "
         f"Classified change: {change}. "
         "The earnings or valuation channel is not measured. "
-        f"Pre-event trend: {trend}. "
-        f"Post-event reaction: {after}. "
-        f"{same_day}. "
+        f"{_trend(relative, _news_time(event))}. "
+        f"Post-event move: {after}. {baseline}. "
+        f"{confirmation.same_day}. "
+        "The same-day gap checks whether the entry is already extended. "
         f"Setup: {setup}. "
-        "A positive pre-event trend labels continuation. "
-        "A new catalyst does not need that trend once the post-event price confirms the change. "
+        "A positive recent relative-strength window labels continuation. "
+        "A new catalyst does not need that window once a post-event price confirms the change. "
+        f"{ceiling}"
         f"{activity}. "
         "Positioning is unknown. "
         "Continuation over the next 1-3 days is an untested hypothesis. "
         "The judgment fails when there is no positive classified change, "
-        "the five-day move exceeds 25%, the post-event move or premarket gap reaches 8%, "
-        "the same-day price is missing, or the post-event price does not confirm the event."
+        "the five-day move exceeds 25%, the cumulative post-event move or the same-day gap "
+        "reaches 8%, the same-day price is missing, the price is not after the news, "
+        "or the pre-event baseline is approximate."
     )
     if veto is None:
         return body
     return f"Veto: {veto}. {body}"
+
+
+def _non_positive(factor: FactorResult) -> bool:
+    return factor.raw_value is not None and factor.raw_value <= 0
+
+
+def _trend(relative: FactorResult, news_at: datetime | None) -> str:
+    if relative.raw_value is None:
+        amount = "relative strength is unavailable"
+    else:
+        amount = f"5-day excess versus SPY and the sector is {relative.raw_value * 100:+.1f}%"
+    window_end = _clock(dict(relative.details).get("window_end"))
+    if news_at is not None and window_end is not None and news_at < window_end:
+        return (
+            "Recent relative strength through the last completed session "
+            f"includes sessions after the event; {amount}"
+        )
+    if news_at is not None and window_end is not None and news_at >= window_end:
+        return f"Recent relative strength completed before the event; {amount}"
+    return f"Recent relative strength through the last completed session; {amount}"
+
+
+def _news_time(event: FactorResult) -> datetime | None:
+    positive = [item for item in event.events if item.direction > 0]
+    if positive:
+        latest = max(positive, key=lambda item: (item.available_at, item.news_id))
+        return latest.available_at
+    return _clock(dict(event.details).get("news_available_at"))
+
+
+def _clock(raw: object) -> datetime | None:
+    if not isinstance(raw, str) or raw in {"", "missing"}:
+        return None
+    parsed = datetime.fromisoformat(raw)
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed

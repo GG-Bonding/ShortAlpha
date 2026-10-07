@@ -1,9 +1,10 @@
 """Alpaca premarket windows.
 
-Free IEX is not a consolidated premarket tape, so that feed returns an explicit
-unavailable window and does not invent volume. SIP minute bars are available at
-the end of the minute. The comparable window is 04:00 through the signal clock
-on that session, never the rest of the day.
+Free IEX is not a consolidated premarket tape. Its volume stays unavailable and
+the daily volume ratio is used instead. A last IEX print is still returned with
+its timestamp so a later check can tell whether that price is after the news.
+SIP minute bars are available at the end of the minute. The comparable window
+is 04:00 through the signal clock on that session, never the rest of the day.
 """
 
 import os
@@ -58,13 +59,10 @@ class AlpacaPremarketProvider:
         timezone: str,
         client: httpx.Client | None = None,
     ) -> "AlpacaPremarketProvider":
-        api_key = ""
-        api_secret = ""
-        if feed == "sip":
-            api_key = os.environ.get("APCA_API_KEY_ID", "")
-            api_secret = os.environ.get("APCA_API_SECRET_KEY", "")
-            if not api_key or not api_secret:
-                raise ConfigError("APCA_API_KEY_ID and APCA_API_SECRET_KEY are required")
+        api_key = os.environ.get("APCA_API_KEY_ID", "")
+        api_secret = os.environ.get("APCA_API_SECRET_KEY", "")
+        if not api_key or not api_secret:
+            raise ConfigError("APCA_API_KEY_ID and APCA_API_SECRET_KEY are required")
         owns_client = client is None
         if client is None:
             client = httpx.Client(timeout=30.0)
@@ -87,10 +85,9 @@ class AlpacaPremarketProvider:
     def window(self, symbol: str, session: date, as_of: datetime) -> PremarketWindow:
         if as_of.tzinfo is None or as_of.utcoffset() is None:
             raise ValueError("as_of must be timezone-aware")
-        if self._feed != "sip":
-            return _unavailable(symbol, session, _IEX_REASON)
         window_start = datetime.combine(session, self._premarket_start, tzinfo=self._timezone)
         window_end = datetime.combine(session, self._signal_clock, tzinfo=self._timezone)
+        consolidated = self._feed == "sip"
         if as_of < window_start:
             return _unavailable(symbol, session, "premarket window has not started")
         if as_of < window_end:
@@ -117,6 +114,8 @@ class AlpacaPremarketProvider:
                 continue
             included.append((started, ended, volume, close, high, low))
         if not included:
+            if not consolidated:
+                return _unavailable(symbol, session, _IEX_REASON)
             return PremarketWindow(
                 symbol=symbol,
                 session_date=session,
@@ -132,6 +131,21 @@ class AlpacaPremarketProvider:
             )
         included.sort(key=lambda item: item[0])
         last = included[-1]
+        if not consolidated:
+            return PremarketWindow(
+                symbol=symbol,
+                session_date=session,
+                available=False,
+                volume=None,
+                last_price=last[3],
+                high=max(item[4] for item in included),
+                low=min(item[5] for item in included),
+                event_time=last[1],
+                published_at=last[1],
+                available_at=last[1],
+                reason=_IEX_REASON,
+                price_consolidated=False,
+            )
         return PremarketWindow(
             symbol=symbol,
             session_date=session,

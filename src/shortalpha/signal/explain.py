@@ -136,7 +136,13 @@ def _same_day(factors: dict[str, object]) -> str:
     details = price.get("details")
     if not isinstance(details, dict) or details.get("degraded") == "true" or "gap" not in details:
         return "missing"
-    return f"premarket gap {float(str(details['gap'])) * 100:+.1f}%"
+    text = f"premarket gap {float(str(details['gap'])) * 100:+.1f}%"
+    stamp = details.get("price_time")
+    if isinstance(stamp, str) and stamp not in {"", "missing"}:
+        text = f"{text} at {stamp}"
+    if details.get("price_consolidated") == "false":
+        text = f"{text}, not consolidated"
+    return text
 
 
 def _missing_same_day(snapshot: dict[str, object]) -> int:

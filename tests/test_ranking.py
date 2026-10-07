@@ -6,6 +6,7 @@ import pytest
 from shortalpha.config import load_config
 from shortalpha.domain import EventRisk, FactorResult, MarketRegime, SignalLabel
 from shortalpha.errors import DataUnavailableError
+from shortalpha.factors.scale import scale_to_weight
 from shortalpha.paths import project_root
 from shortalpha.scoring.rank import SymbolFactors, rank_symbols
 from shortalpha.scoring.regime import classify_regime
@@ -16,11 +17,29 @@ def _cfg():
     return load_config(project_root() / "config" / "default.yaml", root=project_root())
 
 
+_CONFIRMED_PRICE = (
+    ("degraded", "false"),
+    ("gap", "0.0200000000"),
+    ("price_time", "2024-06-20T09:00:00-04:00"),
+    ("prior_close_time", "2024-06-18T20:00:00-04:00"),
+    ("price_consolidated", "true"),
+)
+_CONFIRMED_EVENT = (
+    ("event_risk", "NONE"),
+    ("news_available_at", "2024-06-18T21:00:00-04:00"),
+    ("post_event_reaction", "missing"),
+)
+
+
 def _factor(name: str, score: float, *, event_risk: str = "NONE") -> FactorResult:
     if name == "event":
-        details = (("event_risk", event_risk),)
+        details = (
+            ("event_risk", event_risk),
+            ("news_available_at", "2024-06-18T21:00:00-04:00"),
+            ("post_event_reaction", "missing"),
+        )
     elif name == "price_action":
-        details = (("degraded", "false"), ("gap", "0.0200000000"))
+        details = _CONFIRMED_PRICE
     else:
         details = ()
     return FactorResult(
@@ -198,9 +217,9 @@ def _named(
         if details is not None and name in details:
             factor_details = details[name]
         elif name == "event":
-            factor_details = (("event_risk", "NONE"),)
+            factor_details = _CONFIRMED_EVENT
         elif name == "price_action":
-            factor_details = (("degraded", "false"), ("gap", "0.0200000000"))
+            factor_details = _CONFIRMED_PRICE
         else:
             factor_details = ()
         factors.append(
@@ -249,7 +268,7 @@ def test_price_and_extension_can_reject_a_positive_classification() -> None:
         raw={"event": 0.4, "relative_strength": 0.02},
         reasons={"event": ("Guidance raise",)},
         details={
-            "event": (("event_risk", "NONE"),),
+            "event": _CONFIRMED_EVENT,
             "momentum": (("overheated", "true"),),
         },
     )
@@ -259,7 +278,7 @@ def test_price_and_extension_can_reject_a_positive_classification() -> None:
         raw={"event": 0.4, "relative_strength": 0.02},
         reasons={"event": ("Contract win",)},
         details={
-            "event": (("event_risk", "NONE"),),
+            "event": _CONFIRMED_EVENT,
             "price_action": (("degraded", "false"), ("gap", "0.0900000000")),
         },
     )
@@ -292,7 +311,7 @@ def test_below_baseline_volume_does_not_veto() -> None:
     assert "Positioning is unknown" in book.published[0].thesis
     assert "0.4x the baseline" in book.published[0].thesis
     assert "Setup: continuation." in book.published[0].thesis
-    assert "Same-day premarket gap is +2.0%." in book.published[0].thesis
+    assert "Same-day price at 09:00 is +2.0% from the prior close" in book.published[0].thesis
 
 
 def test_a_confirmed_new_catalyst_does_not_need_pre_event_strength() -> None:
@@ -309,9 +328,11 @@ def test_a_confirmed_new_catalyst_does_not_need_pre_event_strength() -> None:
     assert book.published[0].symbol == "EEE"
     assert book.published[0].thesis_veto is None
     assert "Setup: new catalyst." in book.published[0].thesis
-    assert "Pre-event trend: 5-day excess versus SPY and the sector is -1.0%." in (
+    assert "Recent relative strength through the last completed session; " in (
         book.published[0].thesis
     )
+    assert "5-day excess versus SPY and the sector is -1.0%." in book.published[0].thesis
+    assert "does not add points" not in book.published[0].thesis
 
 
 def test_prior_strength_is_not_confirmation() -> None:
@@ -321,8 +342,12 @@ def test_prior_strength_is_not_confirmation() -> None:
         raw={"event": 0.4, "relative_strength": 0.02},
         reasons={"event": ("Earnings beat",)},
         details={
-            "event": (("event_risk", "NONE"), ("post_event_reaction", "0.0900000000")),
-            "price_action": (("degraded", "false"), ("gap", "0.0200000000")),
+            "event": (
+                ("event_risk", "NONE"),
+                ("news_available_at", "2024-06-18T21:00:00-04:00"),
+                ("post_event_reaction", "0.0900000000"),
+            ),
+            "price_action": _CONFIRMED_PRICE,
         },
     )
     rejected = _named(
@@ -330,7 +355,16 @@ def test_prior_strength_is_not_confirmation() -> None:
         _five(90),
         raw={"event": 0.4, "relative_strength": 0.04},
         reasons={"event": ("Guidance raised",)},
-        details={"price_action": (("degraded", "false"), ("gap", "-0.0100000000"))},
+        details={
+            "event": _CONFIRMED_EVENT,
+            "price_action": (
+                ("degraded", "false"),
+                ("gap", "-0.0100000000"),
+                ("price_time", "2024-06-20T09:00:00-04:00"),
+                ("prior_close_time", "2024-06-18T20:00:00-04:00"),
+                ("price_consolidated", "true"),
+            ),
+        },
     )
     book = _book([extended, rejected])
     vetoes = {row.symbol: row.thesis_veto for row in book.ranked}
@@ -340,6 +374,55 @@ def test_prior_strength_is_not_confirmation() -> None:
     }
     assert "Setup: unconfirmed." in book.ranked[0].thesis
     assert book.published == ()
+
+
+def test_non_positive_momentum_and_strength_cannot_reach_80() -> None:
+    momentum = scale_to_weight(0, -0.05, 0.08, 25)
+    relative = scale_to_weight(0, -0.05, 0.05, 15)
+    book = _book(
+        [
+            _named(
+                "AAA",
+                {
+                    "momentum": momentum,
+                    "volume": 20,
+                    "event": 25,
+                    "relative_strength": relative,
+                    "price_action": 15,
+                },
+                raw={"momentum": 0, "relative_strength": 0, "event": 0.4, "volume": 3},
+                reasons={"event": ("Earnings beat",)},
+                details={
+                    "relative_strength": (("window_end", "2024-06-18T16:00:00-04:00"),),
+                },
+            )
+        ]
+    )
+    row = book.ranked[0]
+    assert row.total_score == pytest.approx(momentum + relative + 60)
+    assert row.total_score < 80
+    assert book.published == ()
+    assert "Setup: new catalyst." in row.thesis
+    assert "does not add points" in row.thesis
+    assert "completed before the event" in row.thesis
+
+
+def test_the_five_day_window_is_not_called_pre_event_when_it_overlaps() -> None:
+    book = _book(
+        [
+            _named(
+                "AAA",
+                _five(90),
+                raw={"event": 0.4, "relative_strength": 0.02},
+                reasons={"event": ("Earnings beat",)},
+                details={
+                    "relative_strength": (("window_end", "2024-06-19T16:00:00-04:00"),),
+                },
+            )
+        ]
+    )
+    assert "includes sessions after the event" in book.published[0].thesis
+    assert "Pre-event trend" not in book.published[0].thesis
 
 
 def test_as_of_must_be_timezone_aware() -> None:

@@ -96,6 +96,15 @@ def compute_relative_strength(
         reasons.append(f"Outperforming {sector_etf}")
     elif rs_sector < 0:
         risks.append(f"Underperforming {sector_etf}")
+    window_end = require_completed_bars(
+        symbol,
+        stock_bars,
+        session=session,
+        as_of=as_of,
+        calendar=calendar,
+        count=relative.lookback_sessions + 1,
+        operation="relative_strength",
+    )[-1].available_at
     return FactorResult(
         name="relative_strength",
         raw_value=raw,
@@ -108,6 +117,7 @@ def compute_relative_strength(
             ("rs_market", f"{rs_market:.10f}"),
             ("rs_sector", f"{rs_sector:.10f}"),
             ("sector_etf", sector_etf),
+            ("window_end", window_end.isoformat()),
         ),
     )
 

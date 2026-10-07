@@ -49,7 +49,7 @@ APCA_API_SECRET_KEY
 
 这些缺口保持可见。不把它们填成“看起来像真的”的数。
 
-1. **盘前。** `alpaca.feed` 默认 `iex`。IEX 不是合并行情，盘前成交量不能当成全市场盘前量。`feed != sip` 时，`premarket_volume_available = false`，成交量因子改用最近一个完整交易日的 `Volume / AvgVolume20`。价格行为因子不编造 gap；全市场缺少盘前价格时，该因子记为中性分，并在快照和日志里写明降级。缺少当天价格的股票不能入选。`feed = sip` 才使用 04:00 到信号时点的盘前窗口。
+1. **盘前。** `alpaca.feed` 默认 `iex`。IEX 不是合并行情，盘前成交量不能当成全市场盘前量。`feed != sip` 时，`premarket_volume_available = false`，成交量因子改用最近一个完整交易日的 `Volume / AvgVolume20`。IEX 仍会读取 04:00 到信号时点的分钟线，只把最后一笔价格和它的时间交给价格确认，并标明这不是合并行情。没有这笔价格时，价格行为记为中性分，股票不能入选。`feed = sip` 才把同一窗口的成交量当作合并盘前量。
 2. **日线可用时间。** Alpaca 日线时间戳是 bar 起点。`available_at` 必须写成当日收盘（常规 16:00 ET，提前收市 13:00 ET），否则会把当天收盘价泄漏给 09:00 的信号。
 3. **复权。** 配置只接受 `adjustment: raw`。用“今天的前复权序列”回放过去，会把未来拆分因子写进历史价格，价格过滤会失真。拆分只在 `ex_date <= 信号日` 时生效。Provider 如果给不出公司行动，就返回明确错误，不用复权价冒充原始价。
 4. **VIX。** 波动率标的配置为 `VIX`，不用 `VIXY` 代替。股票接口没有 VIX 时，`vix_available = false`，状态只用 SPY 与 QQQ 的已完成收益，不把 VIX 当成 0。

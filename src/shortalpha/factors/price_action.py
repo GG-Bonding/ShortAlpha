@@ -22,7 +22,7 @@ def compute_price_action(
     weight: float,
     splits: tuple[Split, ...] = (),
 ) -> FactorResult:
-    if not premarket.available or premarket.last_price is None:
+    if premarket.last_price is None or premarket.available_at is None:
         reason = premarket.reason or "premarket price unavailable"
         return FactorResult(
             name="price_action",
@@ -32,7 +32,7 @@ def compute_price_action(
             available=True,
             degraded=True,
             reasons=(f"{reason}; price-action score is neutral",),
-            details=(("degraded", "true"),),
+            details=(("degraded", "true"), ("price_consolidated", "false")),
         )
     if any(split.symbol == symbol and split.ex_date == session for split in splits):
         raise DataUnavailableError(
@@ -69,6 +69,8 @@ def compute_price_action(
     penalty = _gap_penalty(gap, price_action)
     score = structural * penalty
     risks: list[str] = []
+    if not premarket.price_consolidated:
+        reasons.append("Same-day price is not the consolidated tape")
     if gap > price_action.gap_penalty_start:
         risks.append(f"Premarket gap already {gap * 100:+.1f}%")
     atr_pct = _atr(completed, price_action.atr_lookback) / previous.close
@@ -89,6 +91,9 @@ def compute_price_action(
             ("penalty", f"{penalty:.10f}"),
             ("atr_pct", f"{atr_pct:.10f}"),
             ("degraded", "false"),
+            ("price_time", premarket.available_at.isoformat()),
+            ("prior_close_time", previous.available_at.isoformat()),
+            ("price_consolidated", "true" if premarket.price_consolidated else "false"),
         ),
     )
 

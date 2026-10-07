@@ -29,14 +29,37 @@ def _bar(stamp: str, volume: float, close: float = 10) -> dict[str, object]:
     return {"t": stamp, "o": close, "h": close + 1, "l": close - 1, "c": close, "v": volume}
 
 
-def test_iex_does_not_request_or_invent_premarket_volume() -> None:
+def test_iex_keeps_a_timestamped_price_and_leaves_volume_unavailable() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        raise AssertionError("IEX must not request premarket bars")
+        assert request.url.params["feed"] == "iex"
+        return httpx.Response(
+            200,
+            json={
+                "bars": {"AAA": [_bar("2024-06-20T12:30:00Z", 50, 103)]},
+                "next_page_token": None,
+            },
+        )
 
     window = _provider(handler, feed="iex").window(
         "AAA", NY_SESSION, datetime(2024, 6, 20, 9, 0, tzinfo=NY)
     )
     assert window.available is False
+    assert window.volume is None
+    assert window.last_price == 103
+    assert window.price_consolidated is False
+    assert window.available_at == datetime(2024, 6, 20, 8, 31, tzinfo=NY)
+    assert "premarket_volume_available is false" in window.reason
+
+
+def test_iex_without_prints_does_not_invent_a_price() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"bars": {"AAA": []}, "next_page_token": None})
+
+    window = _provider(handler, feed="iex").window(
+        "AAA", NY_SESSION, datetime(2024, 6, 20, 9, 0, tzinfo=NY)
+    )
+    assert window.available is False
+    assert window.last_price is None
     assert window.volume is None
     assert "premarket_volume_available is false" in window.reason
 

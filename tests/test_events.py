@@ -434,6 +434,42 @@ def test_a_guidance_cut_stays_severe_through_the_next_morning() -> None:
     assert weekend.raw_value == pytest.approx(-0.85 * aged * 0.7)
 
 
+def test_a_comma_clause_does_not_give_the_beat_to_the_other_company() -> None:
+    event, rules = _loaded()
+    as_of = datetime(2024, 6, 20, 9, 0, tzinfo=NY)
+    item = _item(
+        "both",
+        "AAA earnings beat, while BBB was unchanged",
+        as_of,
+        symbols=("AAA", "BBB"),
+    )
+    subject = compute_event("AAA", [item], as_of=as_of, event=event, rules=rules, weight=25)
+    bystander = compute_event("BBB", [item], as_of=as_of, event=event, rules=rules, weight=25)
+    assert subject.reasons == ("Earnings beat",)
+    assert bystander.reasons == ("no qualifying events",)
+    assert dict(bystander.details)["event_risk"] == EventRisk.NONE.value
+
+
+def test_each_company_keeps_the_earnings_event_in_its_own_clause() -> None:
+    event, rules = _loaded()
+    as_of = datetime(2024, 6, 20, 9, 0, tzinfo=NY)
+    item = _item(
+        "split",
+        "AAA earnings beat while BBB earnings miss",
+        as_of,
+        symbols=("AAA", "BBB"),
+    )
+    beat = compute_event("AAA", [item], as_of=as_of, event=event, rules=rules, weight=25)
+    miss = compute_event("BBB", [item], as_of=as_of, event=event, rules=rules, weight=25)
+    assert beat.reasons == ("Earnings beat",)
+    assert beat.raw_value > 0
+    assert dict(beat.details)["event_risk"] == EventRisk.NONE.value
+    assert miss.reasons == ()
+    assert "Earnings miss" in miss.risks
+    assert miss.raw_value < 0
+    assert dict(miss.details)["event_risk"] == EventRisk.SEVERE_NEGATIVE.value
+
+
 def _daily(symbol: str, day: date, close: float) -> DailyBar:
     stamp = datetime.combine(day, time(16, 0), tzinfo=NY)
     return DailyBar(
