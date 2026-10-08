@@ -450,6 +450,31 @@ def test_a_comma_clause_does_not_give_the_beat_to_the_other_company() -> None:
     assert dict(bystander.details)["event_risk"] == EventRisk.NONE.value
 
 
+def test_a_single_company_upgrade_still_scores_without_a_second_name() -> None:
+    event, rules = _loaded()
+    as_of = datetime(2024, 6, 20, 9, 0, tzinfo=NY)
+    item = _item("one", "The broker issued an analyst upgrade", as_of)
+    result = compute_event("NVDA", [item], as_of=as_of, event=event, rules=rules, weight=25)
+    assert result.reasons == ("Analyst upgrade",)
+
+
+def test_an_analyst_upgrade_does_not_score_the_other_company() -> None:
+    event, rules = _loaded()
+    as_of = datetime(2024, 6, 20, 9, 0, tzinfo=NY)
+    item = _item(
+        "rating",
+        "AAA analyst upgrade while BBB was unchanged",
+        as_of,
+        symbols=("AAA", "BBB"),
+    )
+    subject = compute_event("AAA", [item], as_of=as_of, event=event, rules=rules, weight=25)
+    bystander = compute_event("BBB", [item], as_of=as_of, event=event, rules=rules, weight=25)
+    assert subject.raw_value == pytest.approx(0.55 * 0.6)
+    assert subject.reasons == ("Analyst upgrade",)
+    assert bystander.reasons == ("no qualifying events",)
+    assert bystander.raw_value == 0
+
+
 def test_each_company_keeps_the_earnings_event_in_its_own_clause() -> None:
     event, rules = _loaded()
     as_of = datetime(2024, 6, 20, 9, 0, tzinfo=NY)

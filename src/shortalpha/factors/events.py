@@ -14,7 +14,6 @@ from shortalpha.factors.scale import clamp, scale_to_weight
 
 _TOKENS = re.compile(r"[a-z0-9]+")
 _EMPTY_REASON = "no qualifying events"
-_CLAUSE_FAMILIES = frozenset({"earnings", "revenue", "guidance", "offering", "price_target"})
 _DEAL_RULES = frozenset({"ma_announced", "ma_buyer"})
 _NAME_NOISE = re.compile(
     r"\b(incorporated|inc|corp|corporation|ltd|limited|plc|n\.v|nv|se|sa|ag|"
@@ -236,16 +235,13 @@ def _select_roles(
         if family == "legal":
             _keep_legal(group, text, item, symbol, names, kept, ambiguous)
             continue
-        if family in _CLAUSE_FAMILIES:
-            chosen, shared = _rules_in_symbol_clauses(text, group, symbol, item.symbols, names)
-            if chosen:
-                kept.extend(chosen)
-            elif len(item.symbols) == 1 and _patterns_present(text, group):
-                kept.extend(group)
-            elif shared:
-                ambiguous.append(family)
-            continue
-        kept.extend(group)
+        chosen, shared = _rules_in_symbol_clauses(text, group, symbol, item.symbols, names)
+        if chosen:
+            kept.extend(chosen)
+        elif len(item.symbols) == 1 and _patterns_present(text, group):
+            kept.extend(group)
+        elif shared:
+            ambiguous.append(family)
     return kept, ambiguous
 
 
