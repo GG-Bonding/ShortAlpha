@@ -13,10 +13,17 @@ from shortalpha.providers.parsing import load_object, parse_date, parse_dt
 class FixtureMarketDataProvider:
     name = "fixture"
 
-    def __init__(self, bars: list[DailyBar], prices: list[MinutePrice] | None = None) -> None:
+    def __init__(
+        self,
+        bars: list[DailyBar],
+        prices: list[MinutePrice] | None = None,
+        known: set[str] | None = None,
+    ) -> None:
         self._bars = list(bars)
         self._prices = list(prices or [])
         self._known = {bar.symbol for bar in self._bars}
+        if known:
+            self._known.update(known)
 
     @classmethod
     def from_json(cls, path: Path) -> "FixtureMarketDataProvider":

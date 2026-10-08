@@ -1,0 +1,153 @@
+# Live Alpaca providers. Selection rules match config/default.yaml.
+# API keys stay in the environment and are never written here.
+
+# ShortAlpha V0.1 defaults.
+# Paths are relative to the repository root.
+# API keys are never stored here. See docs/data-source-decision.md.
+
+signal:
+  timezone: America/New_York
+  time: "09:00"
+
+strategy:
+  version: v0
+
+universe:
+  sources:
+    - sp500
+    - nasdaq100
+  filters:
+    min_price: 5
+    min_avg_dollar_volume_20d: 50000000
+  # Static snapshots, not historical membership. See docs/data-source-decision.md.
+  point_in_time_membership: false
+  files:
+    sp500: fixtures/universe/sp500.csv
+    nasdaq100: fixtures/universe/nasdaq100.csv
+  as_of:
+    sp500: "2026-09-21"
+    nasdaq100: "2026-08-09"
+
+ranking:
+  top_n: 3
+  long_threshold: 80
+  watch_threshold: 70
+
+weights:
+  momentum: 25
+  volume: 20
+  event: 25
+  relative_strength: 15
+  price_action: 15
+
+momentum:
+  w1: 0.20
+  w3: 0.35
+  w5: 0.45
+  overheat_r5: 0.25
+  overheat_multiplier: 0.5
+  raw_low: -0.05
+  raw_high: 0.08
+
+volume:
+  lookback: 20
+  ratio_low: 0.5
+  ratio_high: 3.0
+
+event:
+  freshness_lambda: 0.05
+  duplicate_window_hours: 12
+  duplicate_jaccard: 0.6
+  max_age_hours: 72
+  severe_importance: 0.8
+  # Score decay still uses freshness_lambda. This floor does not set the hard exclusion.
+  severe_freshness: 0.5
+  # A severe negative stays excluded for this many hours. 72 covers the next
+  # 09:00 after the prior close, including a weekend and the autumn clock change.
+  severe_hold_hours: 72
+  raw_low: -1.0
+  raw_high: 1.0
+  rules: config/event_rules.yaml
+
+relative_strength:
+  market_weight: 0.4
+  sector_weight: 0.6
+  lookback_sessions: 5
+  raw_low: -0.05
+  raw_high: 0.05
+  sector_map: config/sector_map.yaml
+
+price_action:
+  gap_penalty_start: 0.03
+  gap_hard_penalty: 0.08
+  gap_penalty_floor: 0.25
+  atr_lookback: 14
+  atr_elevated: 0.04
+  gap_component_max: 10
+  break_bonus: 2.5
+  elevated_atr_scale: 0.8
+
+hard_filters:
+  block_severe_negative_event: true
+
+regime:
+  extreme_spy_5d: -0.08
+  risk_off_spy_5d: -0.04
+  risk_off_qqq_5d: -0.05
+  risk_off_vix: 25
+  extreme_vix: 35
+  no_trade_on: EXTREME_RISK_OFF
+
+premarket:
+  start: "04:00"
+
+benchmarks:
+  market: SPY
+  growth: QQQ
+  volatility: VIX
+
+providers:
+  market: alpaca
+  premarket: alpaca
+  news: alpaca
+  universe: file
+  calendar: nyse
+
+database:
+  path: data/shortalpha.db
+
+alpaca:
+  feed: iex
+  adjustment: raw
+  data_base_url: https://data.alpaca.markets
+
+calendar:
+  extra_holidays: []
+  extra_early_closes: []
+
+# Horizons are the fixed V0.1 definition. The loader rejects any other list.
+evaluation:
+  horizons: [1, 2, 3, 5]
+  min_bucket_count: 5
+  round_trip_cost: 0.001
+  primary_horizon: 3
+  block_sessions: 3
+  min_proposal_count: 20
+  # Fixed before a candidate is scored. A short sample waits; it does not promote.
+  min_mature_dates: 6
+  min_effective_trades: 6
+  min_complete_blocks: 2
+  buckets:
+    - [80, 85]
+    - [85, 90]
+    - [90, 95]
+    - [95, 100]
+
+logging:
+  level: INFO
+
+fixtures:
+  market: fixtures/market/sample_bars.json
+  premarket: fixtures/premarket/sample_premarket.json
+  news: fixtures/news/sample_news.json
+  universe: fixtures/universe/sample.json

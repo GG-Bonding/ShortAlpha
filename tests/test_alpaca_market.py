@@ -123,7 +123,9 @@ def test_a_minute_lookup_miss_leaves_the_daily_baseline_unchanged() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(403, text="sip unavailable")
 
-    assert _provider(NYSECalendar(), handler).price_at("AAA", news_at, as_of) is None
+    provider = _provider(NYSECalendar(), handler)
+    assert provider.price_at("AAA", news_at, as_of) is None
+    assert provider.last_price_failure == "HTTP 403"
 
 
 def test_missing_credentials_fail_before_a_request(monkeypatch: pytest.MonkeyPatch) -> None:

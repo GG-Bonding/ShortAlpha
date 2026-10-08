@@ -9,10 +9,12 @@ from zoneinfo import ZoneInfo
 
 from shortalpha import __version__
 from shortalpha.calendar import calendar_from_config
+from shortalpha.capture import capture_from_json, git_revision
 from shortalpha.config import AppConfig, config_hash, load_config
 from shortalpha.domain import Split
 from shortalpha.errors import ConfigError, DataUnavailableError, ShortAlphaError
 from shortalpha.evaluation.fill import fill_forward_returns, runs_by_ids, select_runs
+from shortalpha.evaluation.outcomes import format_outcomes
 from shortalpha.evaluation.report import render_evaluation
 from shortalpha.event_rules import event_rules_content_hash, load_event_rules
 from shortalpha.evolution.active import (
@@ -31,7 +33,8 @@ from shortalpha.providers.factory import (
     build_premarket_provider,
     build_universe_provider,
 )
-from shortalpha.replay.engine import replay, run_session
+from shortalpha.replay.engine import replay, replay_saved, run_session
+from shortalpha.signal.coverage import format_coverage
 from shortalpha.signal.explain import format_explanation, format_scan
 from shortalpha.storage import Store
 from shortalpha.universe import LiquidityStatus, evaluate_liquidity, format_number
@@ -73,6 +76,20 @@ def main(argv: list[str] | None = None) -> int:
     evaluate.add_argument("--strategy-version", default=None)
     evaluate.add_argument("--run-mode", default="live", choices=("live", "replay", "shadow"))
     evaluate.add_argument("--experiment", default=None)
+    coverage = sub.add_parser("coverage")
+    _add_config_arg(coverage)
+    coverage.add_argument("--date", required=True)
+    coverage.add_argument("--run-id", default=None)
+    coverage.add_argument("--database", default=None)
+    outcomes = sub.add_parser("outcomes")
+    _add_config_arg(outcomes)
+    outcomes.add_argument("--as-of", default=None)
+    outcomes.add_argument("--database", default=None)
+    outcomes.add_argument("--run-mode", default="live", choices=("live", "replay", "shadow"))
+    replay_inputs = sub.add_parser("replay-inputs")
+    _add_config_arg(replay_inputs)
+    replay_inputs.add_argument("--run-id", required=True)
+    replay_inputs.add_argument("--database", default=None)
     evolve = sub.add_parser("evolve")
     evolve_sub = evolve.add_subparsers(dest="evolve_command", required=True)
     propose = evolve_sub.add_parser("propose")
@@ -107,6 +124,12 @@ def main(argv: list[str] | None = None) -> int:
             return _replay(args)
         if args.command == "evaluate":
             return _evaluate(args)
+        if args.command == "coverage":
+            return _coverage(args)
+        if args.command == "outcomes":
+            return _outcomes(args)
+        if args.command == "replay-inputs":
+            return _replay_inputs(args)
         if args.command == "evolve":
             return _evolve(args)
         return _check(args)
@@ -198,12 +221,26 @@ def _scan(args: argparse.Namespace) -> int:
             event_rules_hash=rules_hash,
             strategy_version=version,
             experiment_id=experiment_id,
+            code_revision=git_revision(root),
         )
         loaded = store.get_snapshot(result.run_id)
         if loaded is None:
             print(f"error: snapshot row missing for {result.run_id}", file=sys.stderr)
             return 1
-        print(format_scan(json.loads(loaded[0])))
+        document = json.loads(loaded[0])
+        print(format_scan(document))
+        saved = store.get_scan_inputs(result.run_id)
+        saved_run = store.get_run(result.run_id)
+        if saved is not None and saved_run is not None:
+            print()
+            print(
+                format_coverage(
+                    saved_run,
+                    document,
+                    capture_from_json(saved),
+                    long_threshold=cfg.ranking.long_threshold,
+                )
+            )
         return 0
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -353,6 +390,129 @@ def _replay(args: argparse.Namespace) -> int:
     )
     print("\n".join(lines))
     return 0
+
+
+def _coverage(args: argparse.Namespace) -> int:
+    root, cfg = _load(args)
+    store = Store(_database_path(root, cfg, args.database), root / "migrations")
+    try:
+        runs = store.runs_on(date.fromisoformat(args.date))
+        if args.run_id:
+            runs = [run for run in runs if run.run_id == args.run_id]
+        if not runs:
+            print(f"error: no snapshot on {args.date}", file=sys.stderr)
+            return 1
+        run = runs[-1]
+        loaded = store.get_snapshot(run.run_id)
+        saved = store.get_scan_inputs(run.run_id)
+        if loaded is None or saved is None:
+            print(f"error: coverage inputs missing for {run.run_id}", file=sys.stderr)
+            return 1
+        print(
+            format_coverage(
+                run,
+                json.loads(loaded[0]),
+                capture_from_json(saved),
+                long_threshold=cfg.ranking.long_threshold,
+            )
+        )
+        return 0
+    finally:
+        store.close()
+
+
+def _replay_inputs(args: argparse.Namespace) -> int:
+    root, cfg = _load(args)
+    calendar = calendar_from_config(cfg)
+    store = Store(_database_path(root, cfg, args.database), root / "migrations")
+    try:
+        source = store.get_run(args.run_id)
+        if source is None:
+            print(f"error: unknown run {args.run_id}", file=sys.stderr)
+            return 1
+        result, matched = replay_saved(
+            cfg,
+            root=root,
+            calendar=calendar,
+            store=store,
+            run_id=args.run_id,
+            session=source.signal_date,
+            notes=f"replay-inputs {args.run_id}",
+        )
+        print(f"source_run: {args.run_id}")
+        print(f"replay_run: {result.run_id}")
+        print(f"snapshot_match: {str(matched).lower()}")
+        return 0 if matched else 1
+    finally:
+        store.close()
+
+
+def _outcomes(args: argparse.Namespace) -> int:
+    root, cfg = _load(args)
+    zone = ZoneInfo(cfg.signal.timezone)
+    if args.as_of:
+        as_of = datetime.combine(date.fromisoformat(args.as_of), datetime.max.time(), tzinfo=zone)
+    else:
+        as_of = datetime.now(zone)
+    calendar = calendar_from_config(cfg)
+    store = Store(_database_path(root, cfg, args.database), root / "migrations")
+    market = build_market_provider(cfg, root, calendar)
+    splits_for, _split_note, split_source = _split_source(cfg)
+    file_rules = load_event_rules(root / cfg.event.rules)
+    file_hash = event_rules_content_hash(root / cfg.event.rules)
+    try:
+        version, _rules, _rules_hash = resolve_strategy(
+            store, cfg, file_rules, requested=None, file_hash=file_hash
+        )
+        days: list[tuple[date, dict[str, object], list[dict[str, object]]]] = []
+        for run in select_runs(store, strategy_version=version, run_mode=args.run_mode):
+            loaded = store.get_snapshot(run.run_id)
+            if loaded is None:
+                print(f"error: snapshot row missing for {run.run_id}", file=sys.stderr)
+                return 1
+            document = json.loads(loaded[0])
+            fill_forward_returns(
+                store,
+                run,
+                document,
+                market,
+                calendar=calendar,
+                as_of=as_of,
+                spy_symbol=cfg.benchmarks.market,
+                splits_for=splits_for,
+            )
+            days.append((run.signal_date, document, _forward_rows(store, run.run_id, as_of)))
+        print(
+            format_outcomes(
+                days,
+                cost=cfg.evaluation.round_trip_cost,
+                long_threshold=cfg.ranking.long_threshold,
+                watch_threshold=cfg.ranking.watch_threshold,
+            )
+        )
+        return 0
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        store.close()
+        for provider in (market, split_source):
+            close = getattr(provider, "close", None)
+            if close is not None:
+                close()
+
+
+def _forward_rows(store: Store, run_id: str, as_of: datetime) -> list[dict[str, object]]:
+    return [
+        {
+            "horizon": int(row["horizon"]),
+            "mae": row["mae"],
+            "spy_return": row["spy_return"],
+            "stock_return": row["stock_return"],
+            "symbol": row["symbol"],
+        }
+        for row in store.forward_for(run_id, as_of=as_of)
+    ]
 
 
 def _no_splits(symbol: str, start: date, end: date, as_of: datetime) -> tuple[Split, ...]:

@@ -6,6 +6,7 @@ CCC has no minute price in the file.
 """
 
 import json
+import sqlite3
 from datetime import date, datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -59,6 +60,25 @@ def test_fixture_files_reach_scan_rank_and_explain(tmp_path: Path, capsys) -> No
     ccc = _explain(config, database, "CCC", capsys)
     assert "Signal: LONG_CANDIDATE" in aaa
     assert "Veto:" not in aaa
+    assert "AAA earnings beat" in captured.out
+    assert "分类=confirmation_reject" in captured.out
+    assert "分类=insufficient_data" in captured.out
+    assert "没有合格机会:" in captured.out
+    run_id = _run_id(database)
+    replay_code = main(
+        [
+            "replay-inputs",
+            "--run-id",
+            run_id,
+            "--config",
+            str(config),
+            "--database",
+            str(database),
+        ]
+    )
+    replay_out = capsys.readouterr().out
+    assert replay_code == 0, replay_out
+    assert "snapshot_match: true" in replay_out
     assert "0 seconds before the news" in aaa
     assert "not consolidated" in aaa
     age = int((BBB_NEWS - BBB_PRINT).total_seconds())
@@ -66,6 +86,18 @@ def test_fixture_files_reach_scan_rank_and_explain(tmp_path: Path, capsys) -> No
     assert "post-event baseline is approximate" in bbb
     assert "post-event baseline is approximate" in ccc
     assert "seconds before the news" not in ccc
+
+
+def _run_id(database: Path) -> str:
+    connection = sqlite3.connect(database)
+    try:
+        row = connection.execute(
+            "SELECT run_id FROM signal_runs ORDER BY created_at LIMIT 1"
+        ).fetchone()
+    finally:
+        connection.close()
+    assert row is not None
+    return str(row[0])
 
 
 def _explain(config: Path, database: Path, symbol: str, capsys) -> str:

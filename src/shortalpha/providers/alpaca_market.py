@@ -41,6 +41,7 @@ class AlpacaMarketDataProvider:
         self._calendar = calendar
         self._client = client
         self._owns_client = owns_client
+        self.last_price_failure: str | None = None
 
     @classmethod
     def from_env(
@@ -100,13 +101,15 @@ class AlpacaMarketDataProvider:
     def price_at(self, symbol: str, news_at: datetime, as_of: datetime) -> MinutePrice | None:
         if news_at.tzinfo is None or as_of.tzinfo is None or as_of.utcoffset() is None:
             raise ValueError("news_at and as_of must be timezone-aware")
+        self.last_price_failure = None
         if news_at > as_of:
             return None
         historical = as_of - news_at >= timedelta(minutes=16)
         feed = "sip" if historical else self._feed
         try:
             rows = self._fetch_minute_rows(symbol, news_at - timedelta(hours=8), news_at, feed)
-        except (httpx.HTTPError, ValueError, FixtureError):
+        except (httpx.HTTPError, ValueError, FixtureError) as exc:
+            self.last_price_failure = str(exc) or exc.__class__.__name__
             return None
         included: list[tuple[datetime, float]] = []
         for raw in rows:
@@ -114,6 +117,7 @@ class AlpacaMarketDataProvider:
                 started = parse_dt(raw["t"], "t")
                 close = float(raw["c"])
             except (KeyError, TypeError, ValueError, FixtureError):
+                self.last_price_failure = "minute bar payload is invalid"
                 return None
             ended = started + timedelta(minutes=1)
             if ended <= news_at and ended <= as_of and close > 0:
@@ -159,6 +163,7 @@ class AlpacaMarketDataProvider:
                 },
             )
             if response.status_code >= 400:
+                self.last_price_failure = f"HTTP {response.status_code}"
                 return []
             body = response.json()
             if not isinstance(body, dict):

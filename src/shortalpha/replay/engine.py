@@ -8,6 +8,7 @@ from pathlib import Path
 
 from shortalpha import __version__
 from shortalpha.calendar import NYSECalendar
+from shortalpha.capture import capture_from_json, git_revision, providers_from_capture, recorded
 from shortalpha.config import AppConfig, config_hash
 from shortalpha.domain import Split
 from shortalpha.errors import DataUnavailableError
@@ -92,10 +93,52 @@ def replay(
                     output_dir=output_dir,
                     run_mode="replay",
                     event_rules_hash=rules_hash,
+                    code_revision=git_revision(root),
                 )
             )
         day = date.fromordinal(day.toordinal() + 1)
     return tuple(results)
+
+
+def replay_saved(
+    cfg: AppConfig,
+    *,
+    root: Path,
+    calendar: NYSECalendar,
+    store: Store,
+    run_id: str,
+    session: date,
+    notes: str,
+) -> tuple[SessionResult, bool]:
+    """Score one saved input bundle again. The snapshot hash is the match check."""
+    text = store.get_scan_inputs(run_id)
+    if text is None:
+        raise ValueError(f"saved inputs are missing for {run_id}")
+    original = store.get_snapshot(run_id)
+    if original is None:
+        raise ValueError(f"snapshot row missing for {run_id}")
+    market, premarket, news, universe, splits_for = providers_from_capture(capture_from_json(text))
+    rules_path = _resolve(root, cfg.event.rules)
+    rules = load_event_rules(rules_path)
+    result = run_session(
+        cfg,
+        calendar=calendar,
+        market=market,
+        premarket=premarket,
+        news=news,
+        universe=universe,
+        store=store,
+        session=session,
+        rules=rules,
+        sector_map=load_sector_map(_resolve(root, cfg.relative_strength.sector_map)),
+        splits_for=splits_for,
+        notes=notes,
+        output_dir=None,
+        run_mode="replay",
+        event_rules_hash=event_rules_content_hash(rules_path),
+        code_revision=git_revision(root),
+    )
+    return result, result.snapshot_hash == original[1]
 
 
 def run_session(
@@ -117,11 +160,15 @@ def run_session(
     event_rules_hash: str,
     strategy_version: str | None = None,
     experiment_id: str = "",
+    code_revision: str = "",
 ) -> SessionResult:
+    market, premarket, news, splits_for, capture = recorded(market, premarket, news, splits_for)
+    capture.git_revision = code_revision
     started = time.perf_counter()
     as_of = calendar.signal_time(session, cfg.signal.time, _zone(cfg.signal.timezone))
     history_start = calendar.shift(session, -30)
     loaded = universe.load(as_of)
+    capture.remember_universe(loaded)
     names = {member.symbol: member.name for member in loaded.members if member.name}
     spy = market.daily_bars(cfg.benchmarks.market, history_start, session, as_of)
     qqq = market.daily_bars(cfg.benchmarks.growth, history_start, session, as_of)
@@ -160,6 +207,7 @@ def run_session(
                 timestamp=as_of,
                 reason=liquidity.reason,
             )
+            capture.add_gap(member.symbol, liquidity.reason)
             continue
         if liquidity.status is not LiquidityStatus.ELIGIBLE:
             continue
@@ -280,6 +328,7 @@ def run_session(
         output_dir=output_dir,
         duration_ms=int((time.perf_counter() - started) * 1000),
     )
+    store.insert_scan_inputs(run_id, capture.to_json(), datetime.now(UTC))
     loaded_snapshot = store.get_snapshot(run_id)
     if loaded_snapshot is None:
         raise RuntimeError(f"snapshot missing after save: {run_id}")

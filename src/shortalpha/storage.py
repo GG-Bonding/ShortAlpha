@@ -459,6 +459,27 @@ class Store:
             return None
         return (row["snapshot_json"], row["snapshot_hash"])
 
+    def insert_scan_inputs(self, run_id: str, inputs_json: str, created_at: datetime) -> None:
+        ensure_aware("created_at", created_at)
+        if not inputs_json:
+            raise ValueError("scan inputs are required")
+        self._execute(
+            """
+            INSERT INTO scan_inputs (run_id, inputs_json, created_at)
+            VALUES (?, ?, ?)
+            """,
+            (run_id, inputs_json, created_at.isoformat()),
+        )
+
+    def get_scan_inputs(self, run_id: str) -> str | None:
+        row = self.conn.execute(
+            "SELECT inputs_json FROM scan_inputs WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return str(row["inputs_json"])
+
     def _execute(self, sql: str, params: tuple[object, ...]) -> None:
         try:
             self.conn.execute(sql, params)
