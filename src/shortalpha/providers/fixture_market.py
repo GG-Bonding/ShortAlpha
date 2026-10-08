@@ -1,4 +1,4 @@
-"""Daily bars from a JSON fixture, filtered at the signal time."""
+"""Daily bars and optional pre-event minute prices from a JSON fixture."""
 
 from datetime import date, datetime
 from pathlib import Path
@@ -46,7 +46,7 @@ class FixtureMarketDataProvider:
                 )
             except (KeyError, TypeError, ValueError) as exc:
                 raise FixtureError(f"invalid bar in {path}: {exc}") from exc
-        return cls(bars)
+        return cls(bars, _prices_from_json(path, payload))
 
     def daily_bars(
         self,
@@ -79,3 +79,30 @@ class FixtureMarketDataProvider:
         if not visible:
             return None
         return max(visible, key=lambda item: item.available_at)
+
+
+def _prices_from_json(path: Path, payload: dict[str, object]) -> list[MinutePrice]:
+    raw_prices = payload.get("prices", [])
+    if raw_prices is None:
+        return []
+    if not isinstance(raw_prices, list):
+        raise FixtureError(f"{path} prices must be a list")
+    prices: list[MinutePrice] = []
+    for raw in raw_prices:
+        if not isinstance(raw, dict):
+            raise FixtureError(f"{path} has a minute price that is not an object")
+        consolidated = raw.get("consolidated", True)
+        if not isinstance(consolidated, bool):
+            raise FixtureError(f"{path} consolidated must be true or false")
+        try:
+            prices.append(
+                MinutePrice(
+                    symbol=str(raw["symbol"]),
+                    price=float(raw["price"]),
+                    available_at=parse_dt(raw["available_at"], "available_at"),
+                    consolidated=consolidated,
+                )
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise FixtureError(f"invalid minute price in {path}: {exc}") from exc
+    return prices

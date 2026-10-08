@@ -9,7 +9,11 @@ that window actually closed before the news.
 from datetime import datetime
 
 from shortalpha.domain import FactorResult
-from shortalpha.scoring.confirmation import Confirmation, confirm_price
+from shortalpha.scoring.confirmation import (
+    BASELINE_MAX_TRADED_SECONDS,
+    Confirmation,
+    confirm_price,
+)
 
 _EMPTY = "no qualifying events"
 
@@ -72,7 +76,10 @@ def _text(
     baseline = {
         "measured": "The baseline is the last completed close at or before the news",
         "exact": "The baseline is the last observed price at or before the news",
-        "approximate": "The baseline is approximate because a session was open before the news",
+        "approximate": (
+            "The baseline is approximate because more than "
+            f"{BASELINE_MAX_TRADED_SECONDS} seconds of trading separate it from the news"
+        ),
         "missing": "The baseline was not observed",
     }[confirmation.baseline]
     if volume.raw_value is None:
@@ -95,7 +102,7 @@ def _text(
         f"Classified change: {change}. "
         "The earnings or valuation channel is not measured. "
         f"{_trend(relative, _news_time(event))}. "
-        f"Post-event move: {after}. {baseline}. "
+        f"Post-event move: {after}. {baseline}.{_age_sentence(event)} "
         f"{confirmation.same_day}. "
         "The same-day gap checks whether the entry is already extended. "
         f"Setup: {setup}. "
@@ -113,6 +120,13 @@ def _text(
     if veto is None:
         return body
     return f"Veto: {veto}. {body}"
+
+
+def _age_sentence(event: FactorResult) -> str:
+    age = dict(event.details).get("pre_event_age_seconds")
+    if not isinstance(age, str) or age in {"", "missing"}:
+        return ""
+    return f" The pre-event price is {age} seconds before the news."
 
 
 def _non_positive(factor: FactorResult) -> bool:

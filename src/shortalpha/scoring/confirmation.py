@@ -2,9 +2,10 @@
 
 The confirming print has to be after the news. The move that matters is from
 the pre-event baseline to the latest price after the news. The same-day gap
-only says whether the entry itself is already extended. A baseline is
-approximate when its clock is before the news and a later session was open in
-between. A daily bar that arrives afterward does not change that clock.
+only says whether the entry itself is already extended. A completed minute that
+ends at the news time is a valid baseline. A baseline is approximate when more
+than one minute of trading separates it from the news, including inside one
+session. A daily bar that arrives afterward does not change that clock.
 """
 
 from dataclasses import replace
@@ -17,6 +18,8 @@ from shortalpha.domain import FactorResult, MinutePrice
 _GAP_HARD = 0.08
 _NY = ZoneInfo("America/New_York")
 _EMPTY = "missing"
+# One completed minute. A longer open gap is an unobserved move, not an exact baseline.
+BASELINE_MAX_TRADED_SECONDS = 60
 
 
 class Confirmation:
@@ -74,11 +77,10 @@ def confirm_price(event: FactorResult, price: FactorResult) -> Confirmation:
     pre_price = _optional_float(dict(event.details).get("pre_event_price"))
     pre_time = _clock(dict(event.details).get("pre_event_price_time"))
     last_price = _optional_float(details.get("last_price"))
-    use_print = _exact_print(pre_price, pre_time, last_price, news_at)
-    if use_print:
-        assert pre_price is not None and last_price is not None
+    if _usable_print(pre_price, pre_time, last_price, news_at):
+        assert pre_price is not None and pre_time is not None and last_price is not None
         cumulative = last_price / pre_price - 1
-        baseline = "exact"
+        baseline = "approximate" if baseline_is_stale(pre_time, news_at) else "exact"
     else:
         if reaction is not None and price_after:
             cumulative = (1 + reaction) * (1 + gap) - 1
@@ -144,38 +146,26 @@ def attach_pre_event_price(factor: FactorResult, printed: MinutePrice | None) ->
     news_at = pre_event_news_time(factor)
     if printed is None or news_at is None or printed.available_at > news_at:
         return factor
-    if baseline_is_stale(printed.available_at, news_at):
-        return factor
+    age = _age_text(news_at - printed.available_at)
     extra = (
         ("pre_event_price", f"{printed.price:.10f}"),
         ("pre_event_price_time", printed.available_at.isoformat()),
+        ("pre_event_age_seconds", age),
         ("pre_event_consolidated", "true" if printed.consolidated else "false"),
     )
     return replace(factor, details=factor.details + extra)
 
 
 def baseline_is_stale(baseline_time: datetime, news_at: datetime) -> bool:
-    """True when a session after this timestamp was open before the news."""
+    """True when this price is after the news or too far back while the market was open."""
     baseline_time = baseline_time.astimezone(_NY)
     news_at = news_at.astimezone(_NY)
-    if news_at <= baseline_time:
+    if baseline_time > news_at:
         return True
-    calendar = NYSECalendar()
-    day = baseline_time.date()
-    while day <= news_at.date():
-        if calendar.is_trading_day(day):
-            for open_at, close_at in _sessions(calendar, day):
-                left = datetime.combine(day, open_at, tzinfo=_NY)
-                right = datetime.combine(day, close_at, tzinfo=_NY)
-                overlaps = min(right, news_at) > max(left, baseline_time)
-                inside = left < baseline_time < right
-                if overlaps and not inside:
-                    return True
-        day += timedelta(days=1)
-    return False
+    return _open_seconds(baseline_time, news_at) > BASELINE_MAX_TRADED_SECONDS
 
 
-def _exact_print(
+def _usable_print(
     pre_price: float | None,
     pre_time: datetime | None,
     last_price: float | None,
@@ -189,8 +179,31 @@ def _exact_print(
         and pre_time <= news_at
         and last_price is not None
         and last_price > 0
-        and not baseline_is_stale(pre_time, news_at)
     )
+
+
+def _age_text(gap: timedelta) -> str:
+    seconds = gap.total_seconds()
+    return f"{seconds:.3f}".rstrip("0").rstrip(".")
+
+
+def _open_seconds(start: datetime, end: datetime) -> float:
+    if end <= start:
+        return 0.0
+    calendar = NYSECalendar()
+    total = 0.0
+    day = start.date()
+    while day <= end.date():
+        if calendar.is_trading_day(day):
+            for open_at, close_at in _sessions(calendar, day):
+                left = datetime.combine(day, open_at, tzinfo=_NY)
+                right = datetime.combine(day, close_at, tzinfo=_NY)
+                span_start = max(left, start)
+                span_end = min(right, end)
+                if span_end > span_start:
+                    total += (span_end - span_start).total_seconds()
+        day += timedelta(days=1)
+    return total
 
 
 def _daily_baseline_time(

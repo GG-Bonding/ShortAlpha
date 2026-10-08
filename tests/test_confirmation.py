@@ -172,6 +172,32 @@ def test_the_same_daily_close_stays_approximate_after_the_next_session() -> None
     assert wednesday == "post-event baseline is approximate"
 
 
+def test_a_minute_ending_at_the_news_is_accepted() -> None:
+    veto = _assess(
+        news_at="2024-06-17T16:05:00-04:00",
+        price_at="2024-06-18T09:00:00-04:00",
+        prior_at="2024-06-17T16:00:00-04:00",
+        gap=0.03,
+        last_price="103.0000000000",
+        pre_event_price="100.0000000000",
+        pre_event_price_time="2024-06-17T16:05:00-04:00",
+    )
+    assert veto is None
+
+
+def test_an_hours_old_print_in_the_same_session_is_approximate() -> None:
+    veto = _assess(
+        news_at="2024-06-17T15:59:30-04:00",
+        price_at="2024-06-18T09:00:00-04:00",
+        prior_at="2024-06-14T16:00:00-04:00",
+        gap=0.03,
+        last_price="103.0000000000",
+        pre_event_price="90.0000000000",
+        pre_event_price_time="2024-06-17T09:31:00-04:00",
+    )
+    assert veto == "post-event baseline is approximate"
+
+
 def test_a_pre_event_minute_price_confirms_the_same_headline() -> None:
     veto = _assess(
         news_at="2024-06-17T16:05:00-04:00",
