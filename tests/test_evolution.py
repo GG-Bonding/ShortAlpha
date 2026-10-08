@@ -142,6 +142,7 @@ def _factors(scores: dict[str, float], event: dict[str, object]) -> dict[str, ob
                 "event_risk": "NONE",
                 "news_available_at": "2024-06-18T21:00:00-04:00",
                 "post_event_reaction": "0.0100000000",
+                "reaction_baseline_time": "2024-06-18T20:00:00-04:00",
             }
             if name == "event"
             else {},

@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from pathlib import Path
 
-from shortalpha.domain import DailyBar
+from shortalpha.domain import DailyBar, MinutePrice
 from shortalpha.errors import FixtureError
 from shortalpha.logging_utils import raise_unavailable
 from shortalpha.pit import select_available
@@ -13,8 +13,9 @@ from shortalpha.providers.parsing import load_object, parse_date, parse_dt
 class FixtureMarketDataProvider:
     name = "fixture"
 
-    def __init__(self, bars: list[DailyBar]) -> None:
+    def __init__(self, bars: list[DailyBar], prices: list[MinutePrice] | None = None) -> None:
         self._bars = list(bars)
+        self._prices = list(prices or [])
         self._known = {bar.symbol for bar in self._bars}
 
     @classmethod
@@ -66,3 +67,15 @@ class FixtureMarketDataProvider:
             bar for bar in self._bars if bar.symbol == symbol and start <= bar.session_date <= end
         ]
         return sorted(select_available(matched, as_of), key=lambda bar: bar.session_date)
+
+    def price_at(self, symbol: str, news_at: datetime, as_of: datetime) -> MinutePrice | None:
+        if news_at.tzinfo is None or as_of.tzinfo is None:
+            raise ValueError("news_at and as_of must be timezone-aware")
+        visible = [
+            item
+            for item in self._prices
+            if item.symbol == symbol and item.available_at <= news_at and item.available_at <= as_of
+        ]
+        if not visible:
+            return None
+        return max(visible, key=lambda item: item.available_at)

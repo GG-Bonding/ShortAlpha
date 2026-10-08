@@ -346,6 +346,7 @@ def test_prior_strength_is_not_confirmation() -> None:
                 ("event_risk", "NONE"),
                 ("news_available_at", "2024-06-18T21:00:00-04:00"),
                 ("post_event_reaction", "0.0900000000"),
+                ("reaction_baseline_time", "2024-06-18T20:00:00-04:00"),
             ),
             "price_action": _CONFIRMED_PRICE,
         },

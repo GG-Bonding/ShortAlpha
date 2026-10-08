@@ -28,6 +28,7 @@ from shortalpha.providers.base import (
     PreMarketDataProvider,
     UniverseProvider,
 )
+from shortalpha.scoring.confirmation import attach_pre_event_price, pre_event_news_time
 from shortalpha.scoring.rank import SymbolFactors, rank_symbols
 from shortalpha.scoring.regime import classify_regime
 from shortalpha.signal.snapshot import save_signal
@@ -173,6 +174,25 @@ def run_session(
                 as_of,
             )
             stock_splits = splits_for(member.symbol, history_start, session, as_of)
+            event_factor = compute_event(
+                member.symbol,
+                items,
+                as_of=as_of,
+                event=cfg.event,
+                rules=rules,
+                weight=cfg.weights.event,
+                rules_sha256=event_rules_hash,
+                bars=bars,
+                session=session,
+                splits=stock_splits,
+                names=names,
+            )
+            news_at = pre_event_news_time(event_factor)
+            if news_at is not None:
+                event_factor = attach_pre_event_price(
+                    event_factor,
+                    market.price_at(member.symbol, news_at, as_of),
+                )
             factors = (
                 compute_momentum(
                     member.symbol,
@@ -194,19 +214,7 @@ def run_session(
                     volume=cfg.volume,
                     weight=cfg.weights.volume,
                 ),
-                compute_event(
-                    member.symbol,
-                    items,
-                    as_of=as_of,
-                    event=cfg.event,
-                    rules=rules,
-                    weight=cfg.weights.event,
-                    rules_sha256=event_rules_hash,
-                    bars=bars,
-                    session=session,
-                    splits=stock_splits,
-                    names=names,
-                ),
+                event_factor,
                 compute_relative_strength(
                     member.symbol,
                     bars,

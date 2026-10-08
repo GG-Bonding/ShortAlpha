@@ -93,6 +93,7 @@ def compute_price_action(
             ("degraded", "false"),
             ("price_time", premarket.available_at.isoformat()),
             ("prior_close_time", previous.available_at.isoformat()),
+            ("last_price", f"{premarket.last_price:.10f}"),
             ("price_consolidated", "true" if premarket.price_consolidated else "false"),
         ),
     )

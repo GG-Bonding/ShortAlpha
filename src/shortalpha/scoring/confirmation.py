@@ -2,15 +2,17 @@
 
 The confirming print has to be after the news. The move that matters is from
 the pre-event baseline to the latest price after the news. The same-day gap
-only says whether the entry itself is already extended. A baseline that skips
-an open session is approximate and is not treated as confirmation.
+only says whether the entry itself is already extended. A baseline is
+approximate when its clock is before the news and a later session was open in
+between. A daily bar that arrives afterward does not change that clock.
 """
 
+from dataclasses import replace
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from shortalpha.calendar import NYSECalendar
-from shortalpha.domain import FactorResult
+from shortalpha.domain import FactorResult, MinutePrice
 
 _GAP_HARD = 0.08
 _NY = ZoneInfo("America/New_York")
@@ -69,17 +71,28 @@ def confirm_price(event: FactorResult, price: FactorResult) -> Confirmation:
             tape=tape,
         )
     price_after = price_time > news_at
-    if reaction is not None and price_after:
-        cumulative = (1 + reaction) * (1 + gap) - 1
-        baseline = "measured"
-    elif reaction is not None:
-        cumulative = reaction
-        baseline = "measured"
-    else:
-        cumulative = gap
+    pre_price = _optional_float(dict(event.details).get("pre_event_price"))
+    pre_time = _clock(dict(event.details).get("pre_event_price_time"))
+    last_price = _optional_float(details.get("last_price"))
+    use_print = _exact_print(pre_price, pre_time, last_price, news_at)
+    if use_print:
+        assert pre_price is not None and last_price is not None
+        cumulative = last_price / pre_price - 1
         baseline = "exact"
-        if prior_time is None or _session_open_between(prior_time, news_at):
+    else:
+        if reaction is not None and price_after:
+            cumulative = (1 + reaction) * (1 + gap) - 1
+        elif reaction is not None:
+            cumulative = reaction
+        else:
+            cumulative = gap
+        baseline_time = _daily_baseline_time(event, prior_time, reaction)
+        if baseline_time is None or baseline_is_stale(baseline_time, news_at):
             baseline = "approximate"
+        elif reaction is not None:
+            baseline = "measured"
+        else:
+            baseline = "exact"
     if baseline == "approximate":
         return Confirmation(
             veto="post-event baseline is approximate",
@@ -111,6 +124,89 @@ def confirm_price(event: FactorResult, price: FactorResult) -> Confirmation:
         same_day=same_day,
         tape=tape,
     )
+
+
+def pre_event_news_time(factor: FactorResult) -> datetime | None:
+    """News time that still needs a minute price before its daily baseline can be used."""
+    details = dict(factor.details)
+    if details.get("pre_event_price") not in {None, "", _EMPTY}:
+        return None
+    news_at = _news_time(factor)
+    if news_at is None:
+        return None
+    baseline = _clock(details.get("reaction_baseline_time"))
+    if baseline is not None and not baseline_is_stale(baseline, news_at):
+        return None
+    return news_at
+
+
+def attach_pre_event_price(factor: FactorResult, printed: MinutePrice | None) -> FactorResult:
+    news_at = pre_event_news_time(factor)
+    if printed is None or news_at is None or printed.available_at > news_at:
+        return factor
+    if baseline_is_stale(printed.available_at, news_at):
+        return factor
+    extra = (
+        ("pre_event_price", f"{printed.price:.10f}"),
+        ("pre_event_price_time", printed.available_at.isoformat()),
+        ("pre_event_consolidated", "true" if printed.consolidated else "false"),
+    )
+    return replace(factor, details=factor.details + extra)
+
+
+def baseline_is_stale(baseline_time: datetime, news_at: datetime) -> bool:
+    """True when a session after this timestamp was open before the news."""
+    baseline_time = baseline_time.astimezone(_NY)
+    news_at = news_at.astimezone(_NY)
+    if news_at <= baseline_time:
+        return True
+    calendar = NYSECalendar()
+    day = baseline_time.date()
+    while day <= news_at.date():
+        if calendar.is_trading_day(day):
+            for open_at, close_at in _sessions(calendar, day):
+                left = datetime.combine(day, open_at, tzinfo=_NY)
+                right = datetime.combine(day, close_at, tzinfo=_NY)
+                overlaps = min(right, news_at) > max(left, baseline_time)
+                inside = left < baseline_time < right
+                if overlaps and not inside:
+                    return True
+        day += timedelta(days=1)
+    return False
+
+
+def _exact_print(
+    pre_price: float | None,
+    pre_time: datetime | None,
+    last_price: float | None,
+    news_at: datetime | None,
+) -> bool:
+    return (
+        pre_price is not None
+        and pre_price > 0
+        and pre_time is not None
+        and news_at is not None
+        and pre_time <= news_at
+        and last_price is not None
+        and last_price > 0
+        and not baseline_is_stale(pre_time, news_at)
+    )
+
+
+def _daily_baseline_time(
+    event: FactorResult,
+    prior_time: datetime | None,
+    reaction: float | None,
+) -> datetime | None:
+    if reaction is not None:
+        return _clock(dict(event.details).get("reaction_baseline_time"))
+    return prior_time
+
+
+def _optional_float(raw: object) -> float | None:
+    if not isinstance(raw, str) or raw in {"", _EMPTY}:
+        return None
+    return float(raw)
 
 
 def _gap(details: dict[str, str]) -> float | None:
@@ -158,24 +254,6 @@ def _same_day(gap: float | None, price_time: datetime | None, tape: str) -> str:
     if tape == "iex":
         return f"{text}. The print is not the consolidated tape"
     return text
-
-
-def _session_open_between(start: datetime, end: datetime) -> bool:
-    start = start.astimezone(_NY)
-    end = end.astimezone(_NY)
-    if end <= start:
-        return False
-    calendar = NYSECalendar()
-    day = start.date()
-    while day <= end.date():
-        if calendar.is_trading_day(day):
-            for open_at, close_at in _sessions(calendar, day):
-                left = datetime.combine(day, open_at, tzinfo=_NY)
-                right = datetime.combine(day, close_at, tzinfo=_NY)
-                if min(right, end) > max(left, start):
-                    return True
-        day += timedelta(days=1)
-    return False
 
 
 def _sessions(calendar: NYSECalendar, day: date) -> tuple[tuple[time, time], ...]:

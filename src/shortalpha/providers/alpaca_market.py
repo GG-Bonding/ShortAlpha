@@ -5,13 +5,13 @@ so a bar dated on the signal session is not visible at 09:00.
 """
 
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx
 
 from shortalpha.calendar import NYSECalendar
-from shortalpha.domain import DailyBar
+from shortalpha.domain import DailyBar, MinutePrice
 from shortalpha.errors import ConfigError, FixtureError
 from shortalpha.logging_utils import raise_unavailable
 from shortalpha.pit import select_available
@@ -96,6 +96,84 @@ class AlpacaMarketDataProvider:
                 )
         kept = [bar for bar in select_available(bars, as_of) if start <= bar.session_date <= end]
         return sorted(kept, key=lambda bar: bar.session_date)
+
+    def price_at(self, symbol: str, news_at: datetime, as_of: datetime) -> MinutePrice | None:
+        if news_at.tzinfo is None or as_of.tzinfo is None or as_of.utcoffset() is None:
+            raise ValueError("news_at and as_of must be timezone-aware")
+        if news_at > as_of:
+            return None
+        historical = as_of - news_at >= timedelta(minutes=16)
+        feed = "sip" if historical else self._feed
+        try:
+            rows = self._fetch_minute_rows(symbol, news_at - timedelta(hours=8), news_at, feed)
+        except (httpx.HTTPError, ValueError, FixtureError):
+            return None
+        included: list[tuple[datetime, float]] = []
+        for raw in rows:
+            try:
+                started = parse_dt(raw["t"], "t")
+                close = float(raw["c"])
+            except (KeyError, TypeError, ValueError, FixtureError):
+                return None
+            ended = started + timedelta(minutes=1)
+            if ended <= news_at and ended <= as_of and close > 0:
+                included.append((ended, close))
+        if not included:
+            return None
+        ended, close = max(included, key=lambda item: item[0])
+        return MinutePrice(
+            symbol=symbol,
+            price=close,
+            available_at=ended,
+            consolidated=feed == "sip",
+        )
+
+    def _fetch_minute_rows(
+        self,
+        symbol: str,
+        start: datetime,
+        end: datetime,
+        feed: str,
+    ) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        page_token: str | None = None
+        while True:
+            params: dict[str, str] = {
+                "symbols": symbol,
+                "timeframe": "1Min",
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "adjustment": "raw",
+                "feed": feed,
+                "limit": "10000",
+                "sort": "asc",
+            }
+            if page_token:
+                params["page_token"] = page_token
+            response = self._client.get(
+                f"{self._base_url}/v2/stocks/bars",
+                params=params,
+                headers={
+                    "APCA-API-KEY-ID": self._api_key,
+                    "APCA-API-SECRET-KEY": self._api_secret,
+                },
+            )
+            if response.status_code >= 400:
+                return []
+            body = response.json()
+            if not isinstance(body, dict):
+                return []
+            grouped = body.get("bars") or {}
+            if not isinstance(grouped, dict):
+                return []
+            symbol_rows = grouped.get(symbol) or []
+            if not isinstance(symbol_rows, list):
+                return []
+            rows.extend(symbol_rows)
+            token = body.get("next_page_token")
+            if not token:
+                return rows
+            page_token = str(token)
 
     def _fetch_rows(self, symbol: str, start: date, as_of: datetime) -> list[dict[str, object]]:
         rows: list[dict[str, object]] = []

@@ -33,17 +33,36 @@ def _assess(
     gap: float,
     reaction: str = "missing",
     consolidated: str = "true",
+    baseline_at: str | None = None,
+    last_price: str | None = None,
+    pre_event_price: str | None = None,
+    pre_event_price_time: str | None = None,
 ) -> str | None:
+    event_details = [
+        ("event_risk", "NONE"),
+        ("news_available_at", news_at),
+        ("post_event_reaction", reaction),
+    ]
+    if reaction != "missing":
+        event_details.append(("reaction_baseline_time", baseline_at or prior_at))
+    if pre_event_price is not None and pre_event_price_time is not None:
+        event_details.append(("pre_event_price", pre_event_price))
+        event_details.append(("pre_event_price_time", pre_event_price_time))
+    price_details = [
+        ("degraded", "false"),
+        ("gap", f"{gap:.10f}"),
+        ("price_time", price_at),
+        ("prior_close_time", prior_at),
+        ("price_consolidated", consolidated),
+    ]
+    if last_price is not None:
+        price_details.append(("last_price", last_price))
     factors = {
         "event": _factor(
             "event",
             raw=0.4,
             reasons=("Earnings beat",),
-            details=(
-                ("event_risk", "NONE"),
-                ("news_available_at", news_at),
-                ("post_event_reaction", reaction),
-            ),
+            details=tuple(event_details),
         ),
         "relative_strength": _factor("relative_strength", raw=0.02, details=()),
         "momentum": _factor("momentum", raw=0.02, details=(("overheated", "false"),)),
@@ -51,13 +70,7 @@ def _assess(
         "price_action": _factor(
             "price_action",
             raw=gap,
-            details=(
-                ("degraded", "false"),
-                ("gap", f"{gap:.10f}"),
-                ("price_time", price_at),
-                ("prior_close_time", prior_at),
-                ("price_consolidated", consolidated),
-            ),
+            details=tuple(price_details),
         ),
     }
     return assess_thesis(factors).veto
@@ -136,3 +149,37 @@ def test_an_iex_print_can_confirm_when_the_baseline_is_exact() -> None:
     )
     assert thesis.veto is None
     assert "not the consolidated tape" in thesis.text
+
+
+def test_the_same_daily_close_stays_approximate_after_the_next_session() -> None:
+    monday_close = "2024-06-17T16:00:00-04:00"
+    news = "2024-06-17T16:05:00-04:00"
+    tuesday = _assess(
+        news_at=news,
+        price_at="2024-06-18T09:00:00-04:00",
+        prior_at=monday_close,
+        gap=0.03,
+    )
+    wednesday = _assess(
+        news_at=news,
+        price_at="2024-06-19T09:00:00-04:00",
+        prior_at="2024-06-18T16:00:00-04:00",
+        gap=103 / 102 - 1,
+        reaction="0.0200000000",
+        baseline_at=monday_close,
+    )
+    assert tuesday == "post-event baseline is approximate"
+    assert wednesday == "post-event baseline is approximate"
+
+
+def test_a_pre_event_minute_price_confirms_the_same_headline() -> None:
+    veto = _assess(
+        news_at="2024-06-17T16:05:00-04:00",
+        price_at="2024-06-18T09:00:00-04:00",
+        prior_at="2024-06-17T16:00:00-04:00",
+        gap=0.03,
+        last_price="103.0000000000",
+        pre_event_price="100.4000000000",
+        pre_event_price_time="2024-06-17T16:04:00-04:00",
+    )
+    assert veto is None

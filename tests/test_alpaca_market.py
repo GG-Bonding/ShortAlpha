@@ -86,6 +86,46 @@ def test_http_error_does_not_echo_the_secret() -> None:
     assert caught.value.provider == "alpaca"
 
 
+def test_old_news_uses_the_last_sip_minute_before_the_headline() -> None:
+    news_at = datetime(2024, 6, 17, 16, 5, tzinfo=NY)
+    as_of = datetime(2024, 6, 18, 9, 0, tzinfo=NY)
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["feed"] = request.url.params["feed"]
+        seen["timeframe"] = request.url.params["timeframe"]
+        return httpx.Response(
+            200,
+            json={
+                "bars": {
+                    "AAA": [
+                        _raw("2024-06-17T20:03:00Z", 100.4),
+                        _raw("2024-06-17T20:05:00Z", 109),
+                    ]
+                },
+                "next_page_token": None,
+            },
+        )
+
+    printed = _provider(NYSECalendar(), handler).price_at("AAA", news_at, as_of)
+    assert printed is not None
+    assert seen["feed"] == "sip"
+    assert seen["timeframe"] == "1Min"
+    assert printed.price == 100.4
+    assert printed.consolidated is True
+    assert printed.available_at == datetime(2024, 6, 17, 16, 4, tzinfo=NY)
+
+
+def test_a_minute_lookup_miss_leaves_the_daily_baseline_unchanged() -> None:
+    news_at = datetime(2024, 6, 17, 16, 5, tzinfo=NY)
+    as_of = datetime(2024, 6, 18, 9, 0, tzinfo=NY)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, text="sip unavailable")
+
+    assert _provider(NYSECalendar(), handler).price_at("AAA", news_at, as_of) is None
+
+
 def test_missing_credentials_fail_before_a_request(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("APCA_API_KEY_ID", raising=False)
     monkeypatch.delenv("APCA_API_SECRET_KEY", raising=False)

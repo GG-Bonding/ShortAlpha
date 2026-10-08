@@ -26,6 +26,7 @@ def _factor(name: str, score: float, *, reasons=(), risks=()) -> FactorResult:
             ("event_risk", "NONE"),
             ("news_available_at", "2024-06-18T21:00:00-04:00"),
             ("post_event_reaction", "0.0100000000"),
+            ("reaction_baseline_time", "2024-06-18T20:00:00-04:00"),
         )
     elif name == "price_action":
         details = (

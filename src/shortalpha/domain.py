@@ -65,6 +65,20 @@ class Split:
 
 
 @dataclass(frozen=True)
+class MinutePrice:
+    symbol: str
+    price: float
+    available_at: datetime
+    consolidated: bool
+
+    def __post_init__(self) -> None:
+        validate_symbol(self.symbol)
+        ensure_aware("available_at", self.available_at)
+        if self.price <= 0:
+            raise ValueError(f"{self.symbol} minute price must be positive")
+
+
+@dataclass(frozen=True)
 class FactorResult:
     name: str
     raw_value: float | None

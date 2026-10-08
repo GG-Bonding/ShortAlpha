@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from typing import Protocol
 
-from shortalpha.domain import DailyBar, NewsItem, PremarketWindow, UniverseList
+from shortalpha.domain import DailyBar, MinutePrice, NewsItem, PremarketWindow, UniverseList
 
 
 class MarketDataProvider(Protocol):
@@ -17,6 +17,9 @@ class MarketDataProvider(Protocol):
         as_of: datetime,
     ) -> list[DailyBar]:
         """Bars whose available_at is at or before as_of."""
+
+    def price_at(self, symbol: str, news_at: datetime, as_of: datetime) -> MinutePrice | None:
+        """Last completed minute at or before the news. None when that print is absent."""
 
 
 class PreMarketDataProvider(Protocol):
