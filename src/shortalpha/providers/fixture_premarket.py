@@ -1,4 +1,9 @@
-"""Premarket windows. Unavailable feeds stay unavailable."""
+"""Premarket windows.
+
+A row can carry a timestamped price while consolidated volume stays unavailable.
+That is how an IEX print is replayed. A row with no timestamp is still an
+explicit miss and does not invent a price.
+"""
 
 from datetime import date, datetime
 from pathlib import Path
@@ -39,6 +44,9 @@ class FixturePreMarketProvider:
                         published_at=parse_optional_dt(raw.get("published_at"), "published_at"),
                         available_at=parse_optional_dt(raw.get("available_at"), "available_at"),
                         reason=str(raw.get("reason") or ""),
+                        price_consolidated=_optional_bool(
+                            raw.get("price_consolidated"), default=True
+                        ),
                     )
                 )
             except (KeyError, TypeError, ValueError) as exc:
@@ -65,7 +73,9 @@ class FixturePreMarketProvider:
         visible = [
             item
             for item in matches
-            if item.available and item.available_at is not None and item.available_at <= as_of
+            if item.available_at is not None
+            and item.available_at <= as_of
+            and (item.available or item.last_price is not None)
         ]
         if not visible:
             return PremarketWindow(
@@ -82,6 +92,14 @@ class FixturePreMarketProvider:
                 reason="no premarket observation at or before signal_time",
             )
         return sorted(visible, key=lambda item: item.available_at or as_of)[-1]
+
+
+def _optional_bool(value: object, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise FixtureError("price_consolidated must be true, false, or null")
+    return value
 
 
 def _optional_float(value: object) -> float | None:
